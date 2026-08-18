@@ -1,5 +1,6 @@
 package com.example.deepseekvoice;
 
+import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.speech.RecognitionListener;
@@ -99,7 +100,7 @@ public class VoiceBridge {
             JSONObject o = new JSONObject();
             o.put("type", type);
             o.put("text", text);
-            WebView wv = activity.getAppWebView();
+            WebView wv = activity.getWebView();
             if (wv != null) {
                 String js = "window.__onSpeech&&window.__onSpeech(" + o.toString() + ");";
                 wv.evaluateJavascript(js, null);
