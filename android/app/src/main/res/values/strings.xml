@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">DeepSeek Voice</string>
+    <string name="mic_desc">语音输入</string>
+    <string name="toggle_input_on">输入:开</string>
+    <string name="toggle_input_off">输入:关</string>
+    <string name="toggle_output_on">播报:开</string>
+    <string name="toggle_output_off">播报:关</string>
+</resources>
