@@ -8,27 +8,31 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-
-import com.getcapacitor.BridgeActivity;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 
 /**
- * Capacitor 承载的 DeepSeek 语音客户端。
+ * 标准 AndroidX WebView 工程承载 DeepSeek 网页 + 原生语音层。
  * UI（语音按钮 + 输入/播报开关）是 Web 技术写的 overlay.js，由本机在页面加载后注入。
+ * 账号密码登录 chat.deepseek.com，免 API Key。
  */
-public class MainActivity extends BridgeActivity {
+public class MainActivity extends AppCompatActivity {
 
+    private WebView webView;
     private VoiceBridge voiceBridge;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        webView = findViewById(R.id.webview);
 
         // 运行时申请麦克风权限
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
@@ -37,39 +41,31 @@ public class MainActivity extends BridgeActivity {
                     new String[]{Manifest.permission.RECORD_AUDIO}, 1);
         }
 
-        // 等 Capacitor 的 WebView 就绪后，承载 DeepSeek 网页并注入 Web 语音层
-        mainHandler.postDelayed(() -> {
-            try {
-                WebView wv = getAppWebView();
-                if (wv == null) return;
+        WebView.setWebContentsDebuggingEnabled(true);
+        webView.getSettings().setDomStorageEnabled(true);
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.getSettings().setAllowFileAccess(true);
+        webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
 
-                wv.getSettings().setDomStorageEnabled(true);
-                wv.getSettings().setJavaScriptEnabled(true);
-                wv.getSettings().setAllowFileAccess(true);
+        voiceBridge = new VoiceBridge(this);
+        webView.addJavascriptInterface(voiceBridge, "VoiceBridge");
 
-                voiceBridge = new VoiceBridge(this);
-                wv.addJavascriptInterface(voiceBridge, "VoiceBridge");
-
-                // 页面加载完成后注入 overlay（Web 写的浮动工具条）
-                wv.setWebViewClient(new WebViewClient() {
-                    @Override
-                    public void onPageFinished(WebView view, String url) {
-                        super.onPageFinished(view, url);
-                        injectOverlay(view);
-                    }
-                });
-
-                // 承载 DeepSeek 网页：账号密码登录，免 API Key
-                wv.loadUrl("https://chat.deepseek.com");
-            } catch (Exception e) {
-                Toast.makeText(this, "初始化失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        // 页面加载完成后注入 overlay（Web 写的浮动工具条）
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                injectOverlay(view);
             }
-        }, 600);
+        });
+
+        // 承载 DeepSeek 网页：账号密码登录，免 API Key
+        webView.loadUrl("https://chat.deepseek.com");
     }
 
     /** 供 VoiceBridge 拿到 WebView 回传识别结果 */
-    public WebView getAppWebView() {
-        return bridge != null ? bridge.getWebView() : null;
+    public WebView getWebView() {
+        return webView;
     }
 
     private void injectOverlay(WebView view) {
@@ -89,5 +85,11 @@ public class MainActivity extends BridgeActivity {
         while ((line = r.readLine()) != null) sb.append(line).append("\n");
         is.close();
         return sb.toString();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (webView != null && webView.canGoBack()) webView.goBack();
+        else super.onBackPressed();
     }
 }
