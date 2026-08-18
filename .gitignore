@@ -3,9 +3,12 @@ __pycache__/
 saved_conversations/
 workspace.json
 
-# Android 构建产物
+# Android 构建产物（桌面版 android/ 与原生封装版 capacitor/android/ 通用）
 build/
 .gradle/
 local.properties
+**/local.properties
 *.apk
 captures/
+capacitor/node_modules/
+capacitor/.gradle/
