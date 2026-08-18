@@ -1,0 +1,17 @@
+{
+  "name": "deepseek-voice",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek 网页语音客户端（Capacitor 网页打包，非原生 UI）",
+  "scripts": {
+    "build": "echo \"web 层即 overlay.js，由原生在页面加载后注入；无需独立前端构建\""
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.2"
+  }
+}
