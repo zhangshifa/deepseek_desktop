@@ -1,0 +1,8 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- 全屏无 ActionBar 的深色主题，贴近 DeepSeek 网页观感 -->
+    <style name="Theme.DeepSeekVoice" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:windowFullscreen">false</item>
+    </style>
+</resources>
