@@ -2,3 +2,10 @@ __pycache__/
 *.pyc
 saved_conversations/
 workspace.json
+
+# Android 构建产物
+build/
+.gradle/
+local.properties
+*.apk
+captures/
