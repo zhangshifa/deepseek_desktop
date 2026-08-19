@@ -182,7 +182,7 @@ public class Updater {
     private void promptInstallPermission() {
         new AlertDialog.Builder(context)
                 .setTitle("需要安装权限")
-                .setMessage("安装更新需要开启「允许安装未知应用」。\n点击"去设置"，打开 DeepSeekVoice 的开关后返回重试。")
+                .setMessage("安装更新需要开启「允许安装未知应用」。\n点击【去设置】，打开 DeepSeekVoice 的开关后返回重试。")
                 .setPositiveButton("去设置", (d, w) -> {
                     try {
                         Intent i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
