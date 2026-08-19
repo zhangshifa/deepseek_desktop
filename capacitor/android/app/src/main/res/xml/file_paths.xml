@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- FileProvider 路径授权：允许系统安装器读取 App 缓存目录内的 APK -->
 <paths>
-    <cache-path name="cache" path="." />
+    <cache-path name="apk_cache" path="updates/" />
+    <external-files-path name="apk_files" path="updates/" />
 </paths>

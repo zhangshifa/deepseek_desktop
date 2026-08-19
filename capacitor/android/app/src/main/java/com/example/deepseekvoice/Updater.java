@@ -21,84 +21,104 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 /**
- * 在线更新：启动/手动检查 GitHub 仓库内 apk/latest.json 版本清单，
- * 发现新版本提示用户 → 下载 app-debug.apk → 调用系统安装器安装。
- *
- * 更新源（私有仓库，走 api.github.com + 内嵌只读令牌）：
- *   GET /repos/{owner}/{repo}/contents/apk/latest.json?ref=main   (Accept: application/vnd.github.raw)
- *   GET /repos/{owner}/{repo}/contents/apk/app-debug.apk?ref=main (Accept: application/vnd.github.raw)
- *
- * ⚠️ 内嵌令牌为 fine-grained 只读（仅本仓库 Contents: Read-only），
- * 反编译可提取，泄漏风险仅限于读取该仓库文件；请勿改成有写权限的令牌。
+ * 在线版本检测与升级（公开仓库，免令牌）。
+ * 检测清单 apk/latest.json 与下载 APK 均多源兜底，任一可用即成功：
+ *   1) raw.githubusercontent.com 直连（实时、无 CDN 缓存）
+ *   2) api.github.com contents API（Accept: application/vnd.github.raw）
+ *   3) jsdelivr CDN（国内快，但发布后可能有短时缓存延迟）
+ * 工作流（.github/workflows/build-apk.yml）每次构建自动发布最新清单与 APK 到仓库 main。
  */
 public class Updater {
 
     private static final String TAG = "DeepSeekVoiceUpdater";
-    private static final String OWNER = "zhangshifa";
-    private static final String REPO = "deepseek_desktop";
-    private static final String API_BASE = "https://api.github.com";
-    private static final String USER_AGENT = "DeepSeekVoice-Android/1.0";
+    private static final String REPO = "zhangshifa/deepseek_desktop";
 
-    /** 内嵌只读令牌：只读、限本仓库，见类注释。 */
-    private static final String TOKEN = "github_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+    private static final String[] MANIFEST_URLS = {
+            "https://raw.githubusercontent.com/" + REPO + "/main/apk/latest.json",
+            "https://api.github.com/repos/" + REPO + "/contents/apk/latest.json?ref=main",
+            "https://cdn.jsdelivr.net/gh/" + REPO + "@main/apk/latest.json"
+    };
+    private static final String[] APK_URLS = {
+            "https://raw.githubusercontent.com/" + REPO + "/main/apk/app-debug.apk",
+            "https://api.github.com/repos/" + REPO + "/contents/apk/app-debug.apk?ref=main",
+            "https://cdn.jsdelivr.net/gh/" + REPO + "@main/apk/app-debug.apk"
+    };
 
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final int localVersionCode;
+    private final boolean silent;   // true=启动静默：仅发现新版本才提示
 
-    public Updater(Context context, int localVersionCode) {
+    public Updater(Context context, int localVersionCode, boolean silent) {
         this.context = context;
         this.localVersionCode = localVersionCode;
+        this.silent = silent;
     }
 
-    /** 异步检查更新：有新版弹提示，无新版 Toast 提示（手动触发时可见）。 */
+    /** 异步检查更新。 */
     public void check() {
         new Thread(() -> {
-            try {
-                String raw = httpGet("/repos/" + OWNER + "/" + REPO + "/contents/apk/latest.json?ref=main",
-                        "application/vnd.github.raw");
-                JSONObject jo = new JSONObject(raw);
-                int remoteCode = jo.getInt("version_code");
-                String remoteName = jo.optString("version_name", "");
-                String notes = jo.optString("notes", "");
-                if (remoteCode > localVersionCode) {
-                    main.post(() -> promptUpdate(remoteName, notes));
-                } else {
-                    main.post(() -> Toast.makeText(context, "已是最新版本 v" + remoteName,
-                            Toast.LENGTH_SHORT).show());
+            int remoteCode = -1;
+            String remoteName = "", notes = "";
+            for (String url : MANIFEST_URLS) {
+                try {
+                    JSONObject jo = new JSONObject(httpGet(url));
+                    int code = jo.optInt("version_code", 0);
+                    if (code > 0) {
+                        remoteCode = code;
+                        remoteName = jo.optString("version_name", "");
+                        notes = jo.optString("notes", "");
+                        break;
+                    }
+                } catch (Exception ignored) {
                 }
-            } catch (Exception e) {
-                Log.w(TAG, "check update failed", e);
-                main.post(() -> Toast.makeText(context, "检查更新失败，请稍后重试",
-                        Toast.LENGTH_SHORT).show());
             }
+            final int rc = remoteCode;
+            final String rn = remoteName, nt = notes;
+            main.post(() -> {
+                if (rc < 0) {
+                    if (!silent) toast("检查更新失败，请稍后重试");
+                    return;
+                }
+                if (rc > localVersionCode) {
+                    promptUpdate(rn, nt);
+                } else if (!silent) {
+                    toast("已是最新版本 v" + rn);
+                }
+            });
         }).start();
     }
 
     private void promptUpdate(String versionName, String notes) {
         new AlertDialog.Builder(context)
                 .setTitle("发现新版本 v" + versionName)
-                .setMessage(notes == null || notes.isEmpty() ? "是否立即更新？" : notes)
+                .setMessage(notes == null || notes.isEmpty() ? "是否立即下载更新？" : notes)
                 .setPositiveButton("立即更新", (d, w) -> downloadAndInstall())
                 .setNegativeButton("稍后再说", null)
                 .show();
     }
 
     private void downloadAndInstall() {
-        final File apk = new File(context.getCacheDir(), "app-debug.apk");
+        toast("正在下载新版本…");
+        final File apk = new File(context.getCacheDir(), "app-update.apk");
         new Thread(() -> {
-            try {
-                httpGetToFile("/repos/" + OWNER + "/" + REPO + "/contents/apk/app-debug.apk?ref=main",
-                        "application/vnd.github.raw", apk);
-                main.post(() -> {
-                    Toast.makeText(context, "下载完成，开始安装…", Toast.LENGTH_SHORT).show();
-                    install(apk);
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "download failed", e);
-                main.post(() -> Toast.makeText(context, "下载失败：" + e.getMessage(),
-                        Toast.LENGTH_LONG).show());
+            File ok = null;
+            for (String url : APK_URLS) {
+                try {
+                    httpGetToFile(url, apk);
+                    if (apk.exists() && apk.length() > 100_000) { ok = apk; break; }
+                } catch (Exception ignored) {
+                }
             }
+            final File downloaded = ok;
+            main.post(() -> {
+                if (downloaded == null) {
+                    toast("下载失败，请检查网络后重试");
+                } else {
+                    toast("下载完成，开始安装…");
+                    install(downloaded);
+                }
+            });
         }).start();
     }
 
@@ -114,12 +134,16 @@ public class Updater {
             context.startActivity(intent);
         } catch (Exception e) {
             Log.e(TAG, "install failed", e);
-            Toast.makeText(context, "无法打开安装器：" + e.getMessage(), Toast.LENGTH_LONG).show();
+            toast("无法打开安装器，请在设置中允许安装未知应用");
         }
     }
 
-    private String httpGet(String path, String accept) throws Exception {
-        HttpURLConnection c = open(path, accept);
+    private void toast(String msg) {
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();
+    }
+
+    private String httpGet(String url) throws Exception {
+        HttpURLConnection c = open(url);
         try {
             InputStream in = c.getInputStream();
             StringBuilder sb = new StringBuilder();
@@ -135,8 +159,8 @@ public class Updater {
         }
     }
 
-    private void httpGetToFile(String path, String accept, File out) throws Exception {
-        HttpURLConnection c = open(path, accept);
+    private void httpGetToFile(String url, File out) throws Exception {
+        HttpURLConnection c = open(url);
         try {
             InputStream in = c.getInputStream();
             OutputStream os = new FileOutputStream(out);
@@ -152,12 +176,11 @@ public class Updater {
         }
     }
 
-    private HttpURLConnection open(String path, String accept) throws Exception {
-        URL url = new URL(API_BASE + path);
-        HttpURLConnection c = (HttpURLConnection) url.openConnection();
-        c.setRequestProperty("Authorization", "Bearer " + TOKEN);
-        c.setRequestProperty("Accept", accept);
-        c.setRequestProperty("User-Agent", USER_AGENT);
+    private HttpURLConnection open(String url) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setRequestProperty("Accept", "application/vnd.github.raw");
+        c.setRequestProperty("User-Agent", "DeepSeekVoice-Android/1.0");
+        c.setInstanceFollowRedirects(true);
         c.setConnectTimeout(15000);
         c.setReadTimeout(60000);
         return c;

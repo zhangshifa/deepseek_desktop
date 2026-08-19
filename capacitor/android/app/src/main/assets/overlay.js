@@ -30,6 +30,7 @@
     '<button id="dsMic" title="语音输入（点一下说话）">🎤</button>' +
     '<button id="dsWake" title="免手模式：说唤醒词才输入，回复自动播报">🛎</button>' +
     '<button id="dsImg" title="眼镜图片：用最新照片（智能眼镜优先）作为输入">📷</button>' +
+    '<button id="dsUpd" title="检查更新：在线检测新版本并升级">🔄</button>' +
     '<span id="dsBt" title="蓝牙耳机：连上后语音输入走耳机麦克风、播报走耳机">🎧</span>' +
     '<label>输入<input type="checkbox" id="dsInChk" checked></label>' +
     '<label>播报<input type="checkbox" id="dsOutChk" checked></label>' +
@@ -39,6 +40,7 @@
   var mic = document.getElementById('dsMic');
   var wakeBtn = document.getElementById('dsWake');
   var imgBtn = document.getElementById('dsImg');
+  var updBtn = document.getElementById('dsUpd');
   var btIcon = document.getElementById('dsBt');
   var inChk = document.getElementById('dsInChk');
   var outChk = document.getElementById('dsOutChk');
@@ -100,6 +102,14 @@
       status.textContent = '正在取最新照片…';
       setTimeout(function () { input.remove(); }, 30000);
     } catch (e) { status.textContent = '图片上传不可用'; }
+  };
+
+  // 在线版本检测与升级：触发原生检查（有新版本会弹窗，可下载安装）
+  updBtn.onclick = function () {
+    try {
+      prompt('__DS_CHECK_UPDATE__');
+      status.textContent = '已触发在线检查，请留意提示';
+    } catch (e) { status.textContent = '检查更新不可用'; }
   };
 
   // 原生回传：{type:'start'|'partial'|'error'|'wake', text:''}

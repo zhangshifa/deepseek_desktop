@@ -91,6 +91,12 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean onJsPrompt(WebView view, String url, String message,
                                       String defaultValue, JsPromptResult result) {
+                // 在线更新：overlay 点 🔄 触发手动检查（silent=false，无新版/失败都会提示）
+                if ("__DS_CHECK_UPDATE__".equals(message)) {
+                    new Updater(MainActivity.this, BuildConfig.VERSION_CODE, false).check();
+                    result.confirm("");
+                    return true;
+                }
                 final EditText input = new EditText(MainActivity.this);
                 input.setText(defaultValue == null ? "" : defaultValue);
                 new AlertDialog.Builder(MainActivity.this)
@@ -142,10 +148,10 @@ public class MainActivity extends AppCompatActivity {
         // 承载 DeepSeek 网页：账号密码登录，免 API Key
         webView.loadUrl("https://chat.deepseek.com");
 
-        // 在线更新检查（异步，有新版才弹窗）
+        // 在线更新检查（异步、静默：仅在发现新版本时弹窗，不打扰正常使用）
         try {
-            int vc = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
-            new Updater(this, vc).check();
+            int vc = BuildConfig.VERSION_CODE;
+            new Updater(this, vc, true).check();
         } catch (Exception ignored) {
         }
     }
