@@ -24,6 +24,11 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    // AGP 8+ 默认关闭 BuildConfig 生成；开启以使用 BuildConfig.VERSION_CODE（在线更新比较版本）
+    buildFeatures {
+        buildConfig true
+    }
+
     buildTypes {
         release {
             minifyEnabled false
