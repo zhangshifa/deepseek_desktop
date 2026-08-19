@@ -33,15 +33,24 @@ public class Updater {
     private static final String TAG = "DeepSeekVoiceUpdater";
     private static final String REPO = "zhangshifa/deepseek_desktop";
 
+    /**
+     * 内嵌只读令牌：fine-grained、仅本仓库 Contents: Read-only。
+     * 私有仓库 App 端必须带令牌才能读更新源（api.github.com）。
+     * ⚠️ APK 可反编译提取，仅限只读令牌；泄漏风险仅限读取该仓库文件。
+     * 留空则走免令牌路径（仓库公开时可用）。
+     */
+    private static final String TOKEN = "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";
+
+    // api.github.com 放第一（私有仓库带令牌实时可读）；jsdelivr/raw 兜底（公开仓库时可用）
     private static final String[] MANIFEST_URLS = {
-            "https://raw.githubusercontent.com/" + REPO + "/main/apk/latest.json",
             "https://api.github.com/repos/" + REPO + "/contents/apk/latest.json?ref=main",
-            "https://cdn.jsdelivr.net/gh/" + REPO + "@main/apk/latest.json"
+            "https://cdn.jsdelivr.net/gh/" + REPO + "@main/apk/latest.json",
+            "https://raw.githubusercontent.com/" + REPO + "/main/apk/latest.json"
     };
     private static final String[] APK_URLS = {
-            "https://raw.githubusercontent.com/" + REPO + "/main/apk/app-debug.apk",
             "https://api.github.com/repos/" + REPO + "/contents/apk/app-debug.apk?ref=main",
-            "https://cdn.jsdelivr.net/gh/" + REPO + "@main/apk/app-debug.apk"
+            "https://cdn.jsdelivr.net/gh/" + REPO + "@main/apk/app-debug.apk",
+            "https://raw.githubusercontent.com/" + REPO + "/main/apk/app-debug.apk"
     };
 
     private final Context context;
@@ -178,11 +187,14 @@ public class Updater {
 
     private HttpURLConnection open(String url) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        if (TOKEN != null && !TOKEN.isEmpty()) {
+            c.setRequestProperty("Authorization", "Bearer " + TOKEN);
+        }
         c.setRequestProperty("Accept", "application/vnd.github.raw");
         c.setRequestProperty("User-Agent", "DeepSeekVoice-Android/1.0");
         c.setInstanceFollowRedirects(true);
-        c.setConnectTimeout(15000);
-        c.setReadTimeout(60000);
+        c.setConnectTimeout(10000);
+        c.setReadTimeout(30000);
         return c;
     }
 }
