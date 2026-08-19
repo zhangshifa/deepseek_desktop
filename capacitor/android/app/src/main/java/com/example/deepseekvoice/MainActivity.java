@@ -4,10 +4,14 @@ import android.Manifest;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.webkit.JsPromptResult;
+import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.EditText;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -63,6 +67,23 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 injectOverlay(view);
+            }
+        });
+
+        // 支持 overlay 的 prompt()（免手模式改唤醒词）→ 弹原生输入框
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onJsPrompt(WebView view, String url, String message,
+                                      String defaultValue, JsPromptResult result) {
+                final EditText input = new EditText(MainActivity.this);
+                input.setText(defaultValue == null ? "" : defaultValue);
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle(message)
+                        .setView(input)
+                        .setPositiveButton("确定", (d, w) -> result.confirm(input.getText().toString()))
+                        .setNegativeButton("取消", (d, w) -> result.cancel())
+                        .show();
+                return true;
             }
         });
 
