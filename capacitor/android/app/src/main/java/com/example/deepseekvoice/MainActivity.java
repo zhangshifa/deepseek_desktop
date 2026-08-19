@@ -40,6 +40,13 @@ public class MainActivity extends AppCompatActivity {
             ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.RECORD_AUDIO}, 1);
         }
+        // Android 12+ 蓝牙连接权限（蓝牙耳机输入/输出）
+        if (android.os.Build.VERSION.SDK_INT >= 31
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.BLUETOOTH_CONNECT}, 2);
+        }
 
         WebView.setWebContentsDebuggingEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
@@ -47,7 +54,7 @@ public class MainActivity extends AppCompatActivity {
         webView.getSettings().setAllowFileAccess(true);
         webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
 
-        voiceBridge = new VoiceBridge(this);
+        voiceBridge = new VoiceBridge(this, new BluetoothAudio(this));
         webView.addJavascriptInterface(voiceBridge, "VoiceBridge");
 
         // 页面加载完成后注入 overlay（Web 写的浮动工具条）

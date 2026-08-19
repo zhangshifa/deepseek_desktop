@@ -13,7 +13,9 @@
     '#dsBar button.on{background:#ef4444;animation:dsPulse 1s infinite;}' +
     '@keyframes dsPulse{0%{opacity:1}50%{opacity:.5}100%{opacity:1}}' +
     '#dsBar label{display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none;}' +
-    '#dsStatus{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85;}';
+    '#dsStatus{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85;}' +
+    '#dsBt{opacity:.35;font-size:15px;cursor:default;transition:opacity .3s,filter .3s;}' +
+    '#dsBt.on{opacity:1;filter:drop-shadow(0 0 4px #3b82f6);}';
 
   var style = document.createElement('style');
   style.textContent = css;
@@ -23,12 +25,14 @@
   bar.id = 'dsBar';
   bar.innerHTML =
     '<button id="dsMic" title="语音输入">🎤</button>' +
+    '<span id="dsBt" title="蓝牙耳机：连上后语音输入走耳机麦克风、播报走耳机">🎧</span>' +
     '<label>输入<input type="checkbox" id="dsInChk" checked></label>' +
     '<label>播报<input type="checkbox" id="dsOutChk" checked></label>' +
     '<span id="dsStatus"></span>';
   document.body.appendChild(bar);
 
   var mic = document.getElementById('dsMic');
+  var btIcon = document.getElementById('dsBt');
   var inChk = document.getElementById('dsInChk');
   var outChk = document.getElementById('dsOutChk');
   var status = document.getElementById('dsStatus');
@@ -36,7 +40,19 @@
   inChk.onchange = function () { inOn = inChk.checked; };
   outChk.onchange = function () { outOn = outChk.checked; };
 
+  // 刷新蓝牙耳机连接状态（连接后输入走耳机麦克风、播报走耳机）
+  function refreshBt() {
+    try {
+      var on = typeof VoiceBridge !== 'undefined' && VoiceBridge.getBluetoothState && VoiceBridge.getBluetoothState();
+      btIcon.classList.toggle('on', !!on);
+      btIcon.title = on ? '蓝牙耳机已连接：输入/播报走耳机' : '蓝牙耳机未连接：使用手机麦克风/扬声器';
+    } catch (e) { }
+  }
+  refreshBt();
+  setInterval(refreshBt, 3000);
+
   mic.onclick = function () {
+    refreshBt();
     if (typeof VoiceBridge === 'undefined') { status.textContent = '语音不可用'; return; }
     if (mic.classList.contains('on')) { VoiceBridge.stopRecognition(); }
     else { VoiceBridge.startRecognition(); }
