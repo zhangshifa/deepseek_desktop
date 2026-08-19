@@ -282,6 +282,12 @@ public class VoiceBridge {
         android.util.Log.d("DeepSeekVoice", msg == null ? "" : msg);
     }
 
+    /** 当前 App 版本号，供网页"关于"面板显示（如 1.1.0）。 */
+    @JavascriptInterface
+    public String getVersionName() {
+        return BuildConfig.VERSION_NAME;
+    }
+
     /** 把识别结果以 JS 对象回传网页 */
     private void emit(String type, String text) {
         try {
