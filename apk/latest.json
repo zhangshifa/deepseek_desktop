@@ -1,7 +1,7 @@
 {
-  "version_code": 5,
-  "version_name": "1.0.4",
-  "notes": "DeepSeekVoice 在线更新包 v1.0.4（GitHub Actions 自动发布）",
+  "version_code": 6,
+  "version_name": "1.0.5",
+  "notes": "DeepSeekVoice 在线更新包 v1.0.5（GitHub Actions 自动发布）",
   "apk": "apk/app-debug.apk",
-  "updated_at": "2026-08-19T02:54:35Z"
+  "updated_at": "2026-08-19T03:01:10Z"
 }
