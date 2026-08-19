@@ -61,6 +61,13 @@ public class MainActivity extends AppCompatActivity {
 
         // 承载 DeepSeek 网页：账号密码登录，免 API Key
         webView.loadUrl("https://chat.deepseek.com");
+
+        // 在线更新检查（异步，有新版才弹窗）
+        try {
+            int vc = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+            new Updater(this, vc).check();
+        } catch (Exception ignored) {
+        }
     }
 
     /** 供 VoiceBridge 拿到 WebView 回传识别结果 */

@@ -9,6 +9,7 @@ build/
 local.properties
 **/local.properties
 *.apk
+!apk/*.apk
 captures/
 capacitor/node_modules/
 capacitor/.gradle/
