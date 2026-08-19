@@ -150,11 +150,38 @@ public class Updater {
                 if (downloaded == null) {
                     toast("下载 v" + versionName + " 失败，请检查网络后重试");
                 } else {
-                    toast("v" + versionName + " 下载完成，正在安装…");
-                    install(downloaded);   // 安装进度由系统安装器展示
+                    // 下载完成：不自动安装，由用户自己确认；未开"允许安装未知应用"时先引导用户去设置操作
+                    promptInstall(downloaded, versionName);
                 }
             });
         }).start();
+    }
+
+    /** 下载完成后由用户确认安装；权限未开时引导用户自行去设置开启（不代客户操作）。 */
+    private void promptInstall(File apk, String versionName) {
+        boolean canInstall = Build.VERSION.SDK_INT < 26
+                || context.getPackageManager().canRequestPackageInstalls();
+        AlertDialog.Builder b = new AlertDialog.Builder(context)
+                .setTitle("下载完成 v" + versionName)
+                .setMessage(canInstall
+                        ? "更新包已下载，是否立即安装？"
+                        : "更新包已下载。请先开启「允许安装未知应用」：\n点击【去设置】→ 打开 DeepSeekVoice 的开关 → 返回后点击【立即安装】。")
+                .setPositiveButton("立即安装", (d, w) -> install(apk))
+                .setNegativeButton("稍后", null);
+        if (!canInstall) {
+            b.setNeutralButton("去设置", (d, w) -> {
+                try {
+                    Intent i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                    i.setData(Uri.parse("package:" + context.getPackageName()));
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(i);
+                } catch (Exception e) {
+                    Log.e(TAG, "open unknown sources settings failed", e);
+                    toast("无法打开设置页，请手动到 设置→应用→DeepSeekVoice→允许安装未知应用");
+                }
+            });
+        }
+        b.show();
     }
 
     /** 拉起系统安装器（FileProvider 授权给系统安装器读取缓存 APK）。 */
