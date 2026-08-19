@@ -1,8 +1,8 @@
 {
-  "version_code": 17,
-  "version_name": "1.1.4",
-  "notes": "DeepSeekVoice 在线更新包 v1.1.4（GitHub Actions 自动发布）",
+  "version_code": 18,
+  "version_name": "1.1.5",
+  "notes": "DeepSeekVoice 在线更新包 v1.1.5（GitHub Actions 自动发布）",
   "download_url": "https://raw.githubusercontent.com/zhangshifa/deepseek_desktop/main/apk/app-debug.apk",
   "apk": "apk/app-debug.apk",
-  "updated_at": "2026-08-19T09:58:11Z"
+  "updated_at": "2026-08-19T10:26:08Z"
 }
