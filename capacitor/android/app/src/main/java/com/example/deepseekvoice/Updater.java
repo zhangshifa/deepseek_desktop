@@ -56,11 +56,13 @@ public class Updater {
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final int localVersionCode;
+    private final String localVersionName;
     private final boolean silent;   // true=启动静默：仅发现新版本才提示
 
-    public Updater(Context context, int localVersionCode, boolean silent) {
+    public Updater(Context context, int localVersionCode, String localVersionName, boolean silent) {
         this.context = context;
         this.localVersionCode = localVersionCode;
+        this.localVersionName = localVersionName;
         this.silent = silent;
     }
 
@@ -101,14 +103,15 @@ public class Updater {
     private void promptUpdate(String versionName, String notes) {
         new AlertDialog.Builder(context)
                 .setTitle("发现新版本 v" + versionName)
-                .setMessage(notes == null || notes.isEmpty() ? "是否立即下载更新？" : notes)
-                .setPositiveButton("立即更新", (d, w) -> downloadAndInstall())
+                .setMessage("当前版本 v" + localVersionName + " → 新版本 v" + versionName
+                        + (notes == null || notes.isEmpty() ? "。\n\n是否立即下载更新？" : "。\n\n" + notes))
+                .setPositiveButton("立即更新", (d, w) -> downloadAndInstall(versionName))
                 .setNegativeButton("稍后再说", null)
                 .show();
     }
 
-    private void downloadAndInstall() {
-        toast("正在下载新版本…");
+    private void downloadAndInstall(String versionName) {
+        toast("正在下载 v" + versionName + "…");
         final File apk = new File(context.getCacheDir(), "app-update.apk");
         new Thread(() -> {
             File ok = null;
@@ -122,9 +125,9 @@ public class Updater {
             final File downloaded = ok;
             main.post(() -> {
                 if (downloaded == null) {
-                    toast("下载失败，请检查网络后重试");
+                    toast("下载 v" + versionName + " 失败，请检查网络后重试");
                 } else {
-                    toast("下载完成，开始安装…");
+                    toast("v" + versionName + " 下载完成，开始安装…");
                     install(downloaded);
                 }
             });

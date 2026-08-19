@@ -56,7 +56,8 @@
     'box-shadow:0 12px 32px rgba(0,0,0,.55);}' +
     '#dsAbout.show{display:block;}' +
     '#dsAbout .dsTitle{font-size:15px;font-weight:700;}' +
-    '#dsAbout .dsVer{color:#f59e0b;font-weight:700;}' +
+    '#dsAbout .dsCur{margin:6px 0 2px;font-size:14px;color:#e5e7eb;}' +
+    '#dsAbout .dsVer{color:#f59e0b;font-weight:800;font-size:16px;}' +
     '#dsAbout .dsFeat{color:#93c5fd;margin:8px 0 12px;line-height:1.8;}' +
     '#dsAbout button{display:inline-flex;align-items:center;gap:6px;margin-right:8px;' +
     'background:linear-gradient(145deg,#3b82f6,#2563eb);color:#fff;border:0;border-radius:9px;' +
@@ -91,7 +92,8 @@
   var about = document.createElement('div');
   about.id = 'dsAbout';
   about.innerHTML =
-    '<div class="dsTitle">DeepSeekVoice <span class="dsVer" id="dsVer"></span></div>' +
+    '<div class="dsTitle">DeepSeekVoice</div>' +
+    '<div class="dsCur">当前版本：<span class="dsVer" id="dsVer">--</span></div>' +
     '<div class="dsFeat">' +
     '<span>🎤 语音输入：说话即转文字</span>' +
     '<span>🔊 语音播报：回复自动朗读</span>' +
