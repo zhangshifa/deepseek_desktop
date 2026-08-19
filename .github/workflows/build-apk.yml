@@ -55,7 +55,8 @@ jobs:
           VN=$(sed -n "s/.*versionName[[:space:]]*'\([^']*\)'.*/\1/p" capacitor/android/app/build.gradle | head -1)
           echo "publishing v${VN} (code ${VC})"
           mkdir -p apk
-          cp capacitor/android/app/build/outputs/apk/debug/app-debug.apk apk/app-debug.apk
+          # 输出文件名已带版本（DSV-1.x.x-debug.apk），通配复制；发布名保持 app-debug.apk 稳定供 App 升级
+          cp capacitor/android/app/build/outputs/apk/debug/*.apk apk/app-debug.apk
           cat > apk/latest.json <<EOF
           {
             "version_code": ${VC},

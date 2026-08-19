@@ -15,8 +15,8 @@ android {
         applicationId 'com.example.deepseekvoice'
         minSdk 24
         targetSdk 34
-        versionCode 11
-        versionName '1.0.10'
+        versionCode 12
+        versionName '1.0.11'
     }
 
     compileOptions {
@@ -33,6 +33,13 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // APK 输出命名：项目简写 + 版本号 + 构建类型（如 DSV-1.0.11-debug.apk），便于区分
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            output.outputFileName = "DSV-${variant.versionName}-${variant.buildType.name}.apk"
         }
     }
 }
