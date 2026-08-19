@@ -55,10 +55,11 @@
     'border-radius:14px;padding:14px 16px;font:13px/1.5 system-ui,-apple-system,sans-serif;' +
     'box-shadow:0 12px 32px rgba(0,0,0,.55);}' +
     '#dsAbout.show{display:block;}' +
-    '#dsAbout .dsTitle{font-size:15px;font-weight:700;}' +
-    '#dsAbout .dsCur{margin:6px 0 2px;font-size:14px;color:#e5e7eb;}' +
+    '#dsAbout .dsTitle{font-size:15px;font-weight:700;margin-bottom:4px;}' +
+    '#dsAbout .dsSec{margin:10px 0 4px;font-size:12px;color:#9ca3af;letter-spacing:1px;}' +
+    '#dsAbout .dsCur{margin:2px 0;font-size:14px;color:#e5e7eb;}' +
     '#dsAbout .dsVer{color:#f59e0b;font-weight:800;font-size:16px;}' +
-    '#dsAbout .dsFeat{color:#93c5fd;margin:8px 0 12px;line-height:1.8;}' +
+    '#dsAbout .dsFeat{color:#93c5fd;margin:4px 0 8px;line-height:1.8;}' +
     '#dsAbout button{display:inline-flex;align-items:center;gap:6px;margin-right:8px;' +
     'background:linear-gradient(145deg,#3b82f6,#2563eb);color:#fff;border:0;border-radius:9px;' +
     'padding:7px 14px;font-size:13px;cursor:pointer;}' +
@@ -75,7 +76,7 @@
     '<button id="dsMic" title="语音输入（点一下说话，说完自动发送）">🎤</button>' +
     '<button id="dsWake" title="免手模式：说唤醒词才输入，回复自动播报">🛎</button>' +
     '<button id="dsImg" title="眼镜图片：用最新照片（智能眼镜优先）作为输入">📷</button>' +
-    '<button id="dsMenu" title="关于：版本信息、功能与检查更新">⋯</button>' +
+    '<button id="dsMenu" title="设置：版本、更新与功能">⚙️</button>' +
     '<span id="dsBt" title="蓝牙耳机：连上后语音输入走耳机麦克风、播报走耳机">🎧</span>' +
     '<div id="dsSet">' +
     '<label class="dsSw">输入<input type="checkbox" id="dsInChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
@@ -88,21 +89,24 @@
     '</div>';
   document.body.appendChild(bar);
 
-  // 关于面板（右上角 ⋯）：版本信息 + 功能呈现 + 检查更新
+  // 设置面板（右上角 ⚙️）：版本与更新 + 功能呈现
   var about = document.createElement('div');
   about.id = 'dsAbout';
   about.innerHTML =
-    '<div class="dsTitle">DeepSeekVoice</div>' +
+    '<div class="dsTitle">⚙️ 设置</div>' +
+    '<div class="dsSec">版本与更新</div>' +
     '<div class="dsCur">当前版本：<span class="dsVer" id="dsVer">--</span></div>' +
+    '<div style="margin:10px 0 4px;">' +
+    '<button id="dsAboutUpd">🔄 手动检查更新</button>' +
+    '<button id="dsAboutClose">✕ 关闭</button>' +
+    '</div>' +
+    '<div class="dsSec">功能</div>' +
     '<div class="dsFeat">' +
     '<span>🎤 语音输入：说话即转文字</span>' +
     '<span>🔊 语音播报：回复自动朗读</span>' +
     '<span>🛎 免手唤醒：说唤醒词才输入</span>' +
     '<span>📷 眼镜图片：最新照片作输入</span>' +
-    '<span>🔄 在线检测：新版本自动提醒</span>' +
-    '</div>' +
-    '<button id="dsAboutUpd">🔄 检查更新</button>' +
-    '<button id="dsAboutClose">✕ 关闭</button>';
+    '</div>';
   document.body.appendChild(about);
 
   var mic = document.getElementById('dsMic');

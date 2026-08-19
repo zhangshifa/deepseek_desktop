@@ -1,6 +1,7 @@
 package com.example.deepseekvoice;
 
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -19,6 +20,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.function.IntConsumer;
 
 /**
  * 在线版本检测与升级（公开仓库，免令牌）。
@@ -111,24 +113,43 @@ public class Updater {
     }
 
     private void downloadAndInstall(String versionName) {
-        toast("正在下载 v" + versionName + "…");
+        // 下载进度：水平进度条 + 百分比 + 可取消
+        final ProgressDialog pd = new ProgressDialog(context);
+        pd.setTitle("更新 v" + versionName);
+        pd.setMessage("正在下载…");
+        pd.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+        pd.setMax(100);
+        pd.setProgress(0);
+        pd.setCancelable(true);
+        pd.setCanceledOnTouchOutside(false);
+        final boolean[] cancelled = {false};
+        pd.setOnCancelListener(d -> cancelled[0] = true);
+        pd.show();
+
         final File apk = new File(context.getCacheDir(), "app-update.apk");
         new Thread(() -> {
             File ok = null;
             for (String url : APK_URLS) {
+                if (cancelled[0]) break;
                 try {
-                    httpGetToFile(url, apk);
-                    if (apk.exists() && apk.length() > 100_000) { ok = apk; break; }
+                    ok = httpGetToFile(url, apk, cancelled,
+                            pct -> main.post(() -> { if (!cancelled[0]) pd.setProgress(pct); }));
+                    if (ok != null) break;
                 } catch (Exception ignored) {
                 }
             }
-            final File downloaded = ok;
+            final File downloaded = cancelled[0] ? null : ok;
             main.post(() -> {
+                pd.dismiss();
+                if (cancelled[0]) {
+                    toast("已取消下载");
+                    return;
+                }
                 if (downloaded == null) {
                     toast("下载 v" + versionName + " 失败，请检查网络后重试");
                 } else {
-                    toast("v" + versionName + " 下载完成，开始安装…");
-                    install(downloaded);
+                    toast("v" + versionName + " 下载完成，正在安装…");
+                    install(downloaded);   // 安装进度由系统安装器展示
                 }
             });
         }).start();
@@ -171,18 +192,30 @@ public class Updater {
         }
     }
 
-    private void httpGetToFile(String url, File out) throws Exception {
+    /** 下载到文件并回报进度（百分比 0-100）；取消返回 null。 */
+    private File httpGetToFile(String url, File out, boolean[] cancelled, IntConsumer onProgress) throws Exception {
         HttpURLConnection c = open(url);
         try {
+            if (c.getResponseCode() != 200) return null;
+            long total = c.getContentLength();
             InputStream in = c.getInputStream();
             OutputStream os = new FileOutputStream(out);
             byte[] buf = new byte[8192];
             int n;
+            long bytes = 0;
             while ((n = in.read(buf)) > 0) {
+                if (cancelled[0]) { os.close(); in.close(); out.delete(); return null; }
                 os.write(buf, 0, n);
+                bytes += n;
+                if (total > 0 && onProgress != null) {
+                    int pct = (int) (bytes * 100 / total);
+                    onProgress.accept(Math.min(pct, 100));
+                }
             }
             os.close();
             in.close();
+            if (cancelled[0]) { out.delete(); return null; }
+            return out;
         } finally {
             c.disconnect();
         }
