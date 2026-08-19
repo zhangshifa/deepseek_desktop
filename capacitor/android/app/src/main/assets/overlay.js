@@ -76,7 +76,7 @@
       wakeOn = true;
       wakeBtn.classList.add('on');
       mic.disabled = true; mic.style.opacity = .4;
-      status.textContent = '免手待命：说「' + wakeWord + '」';
+      status.textContent = '免手待命：说「' + wakeWord + '」（间隔监听，无唤醒词不入输入）';
     } else {
       VoiceBridge.stopWake();
       wakeOn = false;
