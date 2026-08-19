@@ -44,6 +44,9 @@
     '.dsSw input:checked + .dsTrack .dsThumb{left:15px;}' +
     '#dsMode{background:#1f2937;color:#e5e7eb;border:1px solid rgba(255,255,255,.14);border-radius:8px;' +
     'padding:3px 6px;font-size:12px;cursor:pointer;outline:none;}' +
+    '#dsKw{background:#f59e0b;color:#1f2937;font-weight:700;padding:3px 8px;border-radius:8px;' +
+    'font-size:12px;cursor:pointer;user-select:none;box-shadow:0 1px 4px rgba(245,158,11,.4);}' +
+    '#dsKw:active{transform:scale(.92);}' +
     '#dsStatus{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.8;' +
     'font-size:12px;color:#93c5fd;margin-left:auto;}';
 
@@ -64,6 +67,8 @@
     '<label class="dsSw">播报<input type="checkbox" id="dsOutChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
     '<label class="dsSw" title="播报长度：结论=只播前60字，简短=前150字，完整=全文">播报<select id="dsMode">' +
     '<option value="brief">简短</option><option value="key">结论</option><option value="full">完整</option></select></label>' +
+    '<label class="dsSw" title="开启后必须说唤醒词才作为输入，防周围语音误输入">唤醒词<input type="checkbox" id="dsGuard"><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
+    '<span id="dsKw" title="点我修改唤醒词">小深</span>' +
     '<span id="dsStatus"></span>' +
     '</div>';
   document.body.appendChild(bar);
@@ -76,15 +81,22 @@
   var inChk = document.getElementById('dsInChk');
   var outChk = document.getElementById('dsOutChk');
   var modeSel = document.getElementById('dsMode');
+  var guardChk = document.getElementById('dsGuard');
+  var kwLbl = document.getElementById('dsKw');
   var status = document.getElementById('dsStatus');
-  var inOn = true, outOn = true, mode = 'brief';
+  var inOn = true, outOn = true, mode = 'brief', guardOn = false;
   var wakeOn = false;
   var wakeWord = '小深';
   inChk.onchange = function () { inOn = inChk.checked; };
   outChk.onchange = function () { outOn = outChk.checked; };
-  modeSel.onchange = function () {
-    mode = modeSel.value;
-    try { localStorage.setItem('dsMode', mode); } catch (e) { }
+  guardChk.onchange = function () { guardOn = guardChk.checked; };
+  // 点唤醒词文字修改唤醒词（同时作用于"唤醒词才能输入"与免手模式）
+  kwLbl.onclick = function () {
+    var kw = prompt('输入唤醒词（说它才作为输入）：', wakeWord);
+    if (!kw || !kw.trim()) return;
+    wakeWord = kw.trim();
+    kwLbl.textContent = wakeWord;
+    if (wakeOn) VoiceBridge.startWake(wakeWord);   // 免手模式同步新唤醒词
   };
   try {
     var saved = localStorage.getItem('dsMode');
@@ -119,6 +131,7 @@
       var kw = prompt('输入唤醒词（说它才激活输入）：', wakeWord);
       if (!kw || !kw.trim()) return;
       wakeWord = kw.trim();
+      kwLbl.textContent = wakeWord;
       VoiceBridge.startWake(wakeWord);
       wakeOn = true;
       wakeBtn.classList.add('on');
@@ -159,12 +172,25 @@
   window.__onSpeech = function (obj) {
     if (!obj) return;
     if (obj.type === 'start') { mic.classList.add('on'); status.textContent = '聆听中…'; }
-    else if (obj.type === 'partial') { status.textContent = obj.text || '聆听中…'; if (obj.text) fillInput(obj.text); }
+    else if (obj.type === 'partial') {
+      status.textContent = obj.text || '聆听中…';
+      // 开启"唤醒词才能输入"时不预填输入框（等 final 判断是否命中唤醒词），防误输入
+      if (!guardOn && obj.text) fillInput(obj.text);
+    }
     else if (obj.type === 'final') {
-      // 说完即发：自动填入并发送给 DeepSeek
+      // 说完即发：自动填入并发送给 DeepSeek（唤醒词开关开启时须以唤醒词开头）
       mic.classList.remove('on');
+      var t = obj.text || '';
+      if (guardOn) {
+        var rest = stripKw(t);
+        if (rest === null) {
+          status.textContent = '未说唤醒词「' + wakeWord + '」，已忽略（防误输入）';
+          return;
+        }
+        t = rest;
+      }
       status.textContent = '已发送';
-      if (obj.text) { fillInput(obj.text, true); sendMsg(); }
+      if (t) { fillInput(t, true); sendMsg(); }
     }
     else if (obj.type === 'error') { mic.classList.remove('on'); status.textContent = '语音错误'; }
     else if (obj.type === 'wake') {
@@ -173,6 +199,19 @@
       else { status.textContent = '唤醒成功，请说内容'; }
     }
   };
+
+  // 检查文本是否以唤醒词开头（允许常见分隔符）；命中返回去除唤醒词后的内容，否则 null
+  function stripKw(text) {
+    if (!text) return null;
+    if (text.startsWith(wakeWord)) return text.substring(wakeWord.length).trim();
+    var seps = ['，', ',', '、', ' ', '　'];
+    for (var i = 0; i < seps.length; i++) {
+      if (text.indexOf(wakeWord + seps[i]) === 0) {
+        return text.substring(wakeWord.length + seps[i].length).trim();
+      }
+    }
+    return null;
+  }
 
   function fillInput(text, silent) {
     if (!inOn && !silent) return;
@@ -219,11 +258,11 @@
     return slice + '…';
   }
 
-  // 捕获 AI 回复并播报（防抖 1.2s，只读最终完整文本；播报前先播输出提示音，按模式截断精简）
+  // 捕获 AI 回复并播报（防抖 1.2s，只读最终完整文本；播报前先播输出提示音，按模式截断精简）。
+  // 输入框只用于显示麦克风采集的语音文字；AI 输出仅精简播报，不回填输入框。
   var lastText = '';
   var timer = null;
   var lastSpoken = '';
-  var lastReplyFilled = '';   // 上次自动填入输入框的结论（用于保护用户正在输入的新内容）
   function pickReply() {
     if (!outOn) return;
     var nodes = document.querySelectorAll(
@@ -236,39 +275,11 @@
       (!lastSpoken || txt.indexOf(lastSpoken) !== 0)) {
       lastText = txt;
       if (typeof VoiceBridge !== 'undefined') {
-        // 按播报模式截断：同时用于"自动加载到输入框显示结论"和 TTS 播报，保持一致
-        var show = trimReply(txt);
         VoiceBridge.playTone('out');                       // 输出提示音（思考完成）
-        setTimeout(function () {
-          fillReply(show);                                 // 结论自动加载到输入框显示（不发送）
-          VoiceBridge.speak(show);                         // 播报同样精简文本
-        }, 450);
+        setTimeout(function () { VoiceBridge.speak(trimReply(txt)); }, 450);
         lastSpoken = txt;
       }
     }
-  }
-
-  // 按播报模式把结论自动填入输入框显示（不发送）；若用户正在输入新内容则不覆盖
-  function fillReply(text) {
-    if (!outOn || !text) return;
-    var box = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
-    if (!box) return;
-    try {
-      var cur = '';
-      if (box.tagName === 'TEXTAREA' || box.tagName === 'INPUT') cur = box.value || '';
-      else cur = box.innerText || '';
-      if (cur.trim() && cur !== lastReplyFilled) return;   // 用户正在写新问题，别覆盖
-      if (box.tagName === 'TEXTAREA' || box.tagName === 'INPUT') {
-        var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-        setter.call(box, text);
-        box.dispatchEvent(new Event('input', { bubbles: true }));
-      } else {
-        box.innerText = text;
-        box.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-      lastReplyFilled = text;
-      status.textContent = '结论已显示在输入框（回车可追问）';
-    } catch (e) { }
   }
   var obs = new MutationObserver(function () {
     if (!outOn) return;
