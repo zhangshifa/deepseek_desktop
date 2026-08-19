@@ -45,6 +45,14 @@ jobs:
           name: app-debug-apk
           path: capacitor/android/app/build/outputs/apk/debug/*.apk
 
+      # 签名校验：打印 APK 签名证书指纹，确认使用仓库内固定 keystore（keys/debug.keystore，
+      # SHA1 37:18:35:FE:6E:E7:B2:E7:CF:1E:E4:BC:B8:BF:9A:28:9B:FE:77:53），保证可覆盖安装。
+      - name: Verify APK signature
+        if: success()
+        run: |
+          $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs \
+            capacitor/android/app/build/outputs/apk/debug/*.apk
+
       # 在线更新源：把 APK + 版本清单 latest.json 推回仓库 main（App 检查/下载用）。
       # 只动 apk/ 目录，不在 workflow 的 push paths 里，不会递归触发构建。
       - name: Publish update manifest to repo
