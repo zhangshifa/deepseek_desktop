@@ -1,10 +1,13 @@
 package com.example.deepseekvoice;
 
 import android.Manifest;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.webkit.JsPromptResult;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -30,6 +33,7 @@ public class MainActivity extends AppCompatActivity {
     private WebView webView;
     private VoiceBridge voiceBridge;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private ValueCallback<Uri[]> uploadMessage;   // 网页图片上传回调（智能眼镜图片输入）
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -50,6 +54,18 @@ public class MainActivity extends AppCompatActivity {
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.BLUETOOTH_CONNECT}, 2);
+        }
+        // 相册读取权限（智能眼镜图片输入：取最新照片上传给 DeepSeek）
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.READ_MEDIA_IMAGES}, 3);
+            }
+        } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, 3);
         }
 
         WebView.setWebContentsDebuggingEnabled(true);
@@ -83,6 +99,42 @@ public class MainActivity extends AppCompatActivity {
                         .setPositiveButton("确定", (d, w) -> result.confirm(input.getText().toString()))
                         .setNegativeButton("取消", (d, w) -> result.cancel())
                         .show();
+                return true;
+            }
+
+            // 智能眼镜图片输入：网页触发图片上传时，直接返回相册最新照片（优先眼镜相册）
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> filePathCallback,
+                                             WebChromeClient.FileChooserParams fileChooserParams) {
+                if (uploadMessage != null) {
+                    uploadMessage.onReceiveValue(null);
+                }
+                uploadMessage = filePathCallback;
+                boolean isImage = fileChooserParams != null
+                        && fileChooserParams.getAcceptTypes() != null;
+                if (isImage) {
+                    isImage = false;
+                    for (String t : fileChooserParams.getAcceptTypes()) {
+                        if (t != null && t.toLowerCase().contains("image")) {
+                            isImage = true;
+                            break;
+                        }
+                    }
+                }
+                if (isImage) {
+                    Uri latest = LatestPhotoFinder.findLatest(MainActivity.this);
+                    if (latest != null) {
+                        Toast.makeText(MainActivity.this,
+                                "已使用最新照片（智能眼镜优先）作为输入", Toast.LENGTH_SHORT).show();
+                        uploadMessage.onReceiveValue(new Uri[]{latest});
+                        uploadMessage = null;
+                        return true;
+                    }
+                    Toast.makeText(MainActivity.this, "相册没有照片，请先用眼镜拍照",
+                            Toast.LENGTH_SHORT).show();
+                }
+                uploadMessage.onReceiveValue(null);
+                uploadMessage = null;
                 return true;
             }
         });

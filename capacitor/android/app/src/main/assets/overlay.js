@@ -29,6 +29,7 @@
   bar.innerHTML =
     '<button id="dsMic" title="语音输入（点一下说话）">🎤</button>' +
     '<button id="dsWake" title="免手模式：说唤醒词才输入，回复自动播报">🛎</button>' +
+    '<button id="dsImg" title="眼镜图片：用最新照片（智能眼镜优先）作为输入">📷</button>' +
     '<span id="dsBt" title="蓝牙耳机：连上后语音输入走耳机麦克风、播报走耳机">🎧</span>' +
     '<label>输入<input type="checkbox" id="dsInChk" checked></label>' +
     '<label>播报<input type="checkbox" id="dsOutChk" checked></label>' +
@@ -37,6 +38,7 @@
 
   var mic = document.getElementById('dsMic');
   var wakeBtn = document.getElementById('dsWake');
+  var imgBtn = document.getElementById('dsImg');
   var btIcon = document.getElementById('dsBt');
   var inChk = document.getElementById('dsInChk');
   var outChk = document.getElementById('dsOutChk');
@@ -84,6 +86,20 @@
       mic.disabled = false; mic.style.opacity = 1;
       status.textContent = '';
     }
+  };
+
+  // 智能眼镜图片输入：触发网页图片上传，原生返回相册最新照片（眼镜相册优先）
+  imgBtn.onclick = function () {
+    try {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      input.click();
+      status.textContent = '正在取最新照片…';
+      setTimeout(function () { input.remove(); }, 30000);
+    } catch (e) { status.textContent = '图片上传不可用'; }
   };
 
   // 原生回传：{type:'start'|'partial'|'error'|'wake', text:''}
