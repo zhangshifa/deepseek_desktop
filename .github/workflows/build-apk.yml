@@ -1,14 +1,30 @@
+# ============================================================
+# DeepSeekVoice APK 云编译 + 在线 OTA 发布工作流
+# 每次构建自动完成：
+#   1. 编译 debug APK（DSV-<版本>-debug.apk，固定签名）
+#   2. 上传 artifact（GitHub → Actions → 下载）
+#   3. 签名校验（apksigner 打印证书指纹，确认固定 keystore）
+#   4. 发布在线更新源：apk/app-debug.apk + apk/latest.json 推回 main
+#   5. 创建 GitHub Release（附 APK）
+# 触发：手动（workflow_dispatch）或 push 涉及 android 代码/本文件
+# 注意：发布步骤只动 apk/ 目录，不在下方 push paths 内 → 不会递归触发构建
+# ============================================================
 name: Build APK (Capacitor)
 
 on:
-  workflow_dispatch:        # 手动触发：GitHub → Actions → Build APK → Run workflow
+  workflow_dispatch:          # 手动触发：GitHub → Actions → Build APK → Run workflow
   push:
     paths:
       - 'capacitor/android/**'
       - '.github/workflows/build-apk.yml'
 
 permissions:
-  contents: write            # 允许创建 Release 并上传 apk
+  contents: write             # 允许推送 apk/ 更新源、创建 Release
+
+# 并发保护：同一仓库同时只跑一个本工作流（防发布步骤 git push 冲突）
+concurrency:
+  group: build-apk
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -45,8 +61,9 @@ jobs:
           name: app-debug-apk
           path: capacitor/android/app/build/outputs/apk/debug/*.apk
 
-      # 签名校验：打印 APK 签名证书指纹，确认使用仓库内固定 keystore（keys/debug.keystore，
-      # SHA1 37:18:35:FE:6E:E7:B2:E7:CF:1E:E4:BC:B8:BF:9A:28:9B:FE:77:53），保证可覆盖安装。
+      # 签名校验：确认 APK 使用仓库内固定 keystore（capacitor/android/app/keys/debug.keystore，
+      # SHA1 37:18:35:FE:6E:E7:B2:E7:CF:1E:E4:BC:B8:BF:9A:28:9B:FE:77:53）。
+      # 签名必须与上一版本一致，否则覆盖安装/OTA 升级会报"签名不一致"。
       - name: Verify APK signature
         if: success()
         run: |
@@ -54,23 +71,23 @@ jobs:
             capacitor/android/app/build/outputs/apk/debug/*.apk
 
       # 在线更新源：把 APK + 版本清单 latest.json 推回仓库 main（App 检查/下载用）。
-      # 只动 apk/ 目录，不在 workflow 的 push paths 里，不会递归触发构建。
+      # 发布文件名固定 app-debug.apk，App 端下载路径写死依赖；只动 apk/，不会递归触发构建。
       - name: Publish update manifest to repo
         if: success()
         run: |
           set -e
           VC=$(sed -n "s/.*versionCode[[:space:]]*\([0-9]*\).*/\1/p" capacitor/android/app/build.gradle | head -1)
           VN=$(sed -n "s/.*versionName[[:space:]]*'\([^']*\)'.*/\1/p" capacitor/android/app/build.gradle | head -1)
+          if [ -z "$VC" ] || [ -z "$VN" ]; then echo "版本号提取失败"; exit 1; fi
           echo "publishing v${VN} (code ${VC})"
           mkdir -p apk
-          # 输出文件名已带版本（DSV-1.x.x-debug.apk），通配复制；发布名保持 app-debug.apk 稳定供 App 升级
           cp capacitor/android/app/build/outputs/apk/debug/*.apk apk/app-debug.apk
           cat > apk/latest.json <<EOF
           {
             "version_code": ${VC},
             "version_name": "${VN}",
             "notes": "DeepSeekVoice 在线更新包 v${VN}（GitHub Actions 自动发布）",
-            "download_url": "https://raw.githubusercontent.com/zhangshifa/deepseek_desktop/main/apk/app-debug.apk",
+            "download_url": "https://api.github.com/repos/zhangshifa/deepseek_desktop/contents/apk/app-debug.apk?ref=main",
             "apk": "apk/app-debug.apk",
             "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
@@ -90,6 +107,7 @@ jobs:
           body: |
             由 GitHub Actions 云编译生成（Capacitor 网页语音版）。
             账号密码登录 DeepSeek，免 API Key。
+            固定签名，可覆盖安装；App 内 ⚙️ 检查更新 可在线升级。
           files: capacitor/android/app/build/outputs/apk/debug/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
