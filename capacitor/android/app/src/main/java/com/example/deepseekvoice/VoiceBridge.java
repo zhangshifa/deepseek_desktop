@@ -49,6 +49,7 @@ public class VoiceBridge {
 
     // 免手模式（关键字唤醒）
     private volatile boolean wakeActive = false;
+    private volatile boolean wakePaused = false;   // 播报期间暂停监听，防止采集到播报声
     private String wakeKeyword = "小深";
 
     public VoiceBridge(MainActivity activity, BluetoothAudio bluetoothAudio) {
@@ -64,6 +65,23 @@ public class VoiceBridge {
                         .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
                         .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build());
+                // 播报完成回调：网页据此决定"是否恢复免手监听、继续接收语音转文字"
+                tts.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
+                    @Override
+                    public void onStart(String utteranceId) {
+                    }
+
+                    @Override
+                    public void onDone(String utteranceId) {
+                        emit("done", "");
+                    }
+
+                    @SuppressWarnings("deprecation")
+                    @Override
+                    public void onError(String utteranceId) {
+                        emit("done", "");
+                    }
+                });
             }
         });
 
@@ -163,12 +181,29 @@ public class VoiceBridge {
     @JavascriptInterface
     public void stopWake() {
         wakeActive = false;
+        wakePaused = false;
         stopRecognition();
+    }
+
+    /** 暂停免手监听（播报期间调用，避免播报声音被采集）。 */
+    @JavascriptInterface
+    public void pauseWake() {
+        wakePaused = true;
+        stopRecognition();
+    }
+
+    /** 恢复免手监听（播报完毕、输入开关开启时调用，继续接收语音转文字）。 */
+    @JavascriptInterface
+    public void resumeWake() {
+        wakePaused = false;
+        if (wakeActive) {
+            handler.post(this::wakeListenOnce);
+        }
     }
 
     /** 免手模式待命监听一轮（识别完成后按节流策略续接下一轮）。 */
     private void wakeListenOnce() {
-        if (!wakeActive || recognizer == null || listening) return;
+        if (!wakeActive || recognizer == null || listening || wakePaused) return;
         listening = true;
         enableScoIfBt();
         try {
@@ -250,7 +285,7 @@ public class VoiceBridge {
         if (tts == null || text == null || text.isEmpty()) return;
         handler.post(() -> {
             tts.stop();
-            tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null);
+            tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "ds");
         });
     }
 
@@ -288,17 +323,19 @@ public class VoiceBridge {
         return BuildConfig.VERSION_NAME;
     }
 
-    /** 把识别结果以 JS 对象回传网页 */
+    /** 把识别结果以 JS 对象回传网页（切到主线程执行 evaluateJavascript，TTS/识别回调可能不在主线程） */
     private void emit(String type, String text) {
         try {
             JSONObject o = new JSONObject();
             o.put("type", type);
             o.put("text", text);
-            WebView wv = activity.getWebView();
-            if (wv != null) {
-                String js = "window.__onSpeech&&window.__onSpeech(" + o.toString() + ");";
-                wv.evaluateJavascript(js, null);
-            }
+            final String js = "window.__onSpeech&&window.__onSpeech(" + o.toString() + ");";
+            handler.post(() -> {
+                WebView wv = activity.getWebView();
+                if (wv != null) {
+                    wv.evaluateJavascript(js, null);
+                }
+            });
         } catch (Exception ignored) {
         }
     }

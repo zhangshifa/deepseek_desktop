@@ -1,10 +1,10 @@
-/* DeepSeek 语音层（Web 技术）：浮动工具条 + 语音输入/播报开关 + 免手模式（关键字唤醒）+ 眼镜图片 + 关于（版本/更新）。
+/* DeepSeek 语音层（Web 技术）：浮动工具条 + ⚙️ 设置/关于双菜单 + 免手模式（关键字唤醒）+ 眼镜图片。
    由原生在 chat.deepseek.com 页面加载后注入。
    交互：
    🎤 点一下说话，说完自动填入并发送（final 事件）；受"输入"开关控制；
-   🛎 免手模式：说唤醒词（默认"小深"）→ 内容自动填入并发送 → 回复播报；
-   📷 智能眼镜最新照片作为图片输入；⋯ 关于：版本号、功能呈现、检查更新；🎧 蓝牙耳机状态；
-   播报模式（完整/简短/结论）可切换并记忆，受"播报"开关控制。 */
+   🛎 免手模式：说唤醒词（默认"小深"）→ 自动填入并发送 → 播报；播报期间暂停监听，
+      播报完毕按"输入"开关决定是否恢复监听（开=继续接收语音转文字，关=停止接收）；
+   📷 智能眼镜最新照片作为图片输入；⚙️ 设置（输入/播报/模式/唤醒词）与 关于（版本/检查更新）；🎧 蓝牙耳机状态。 */
 (function () {
   if (window.__dsInjected) return;
   window.__dsInjected = true;
@@ -32,10 +32,22 @@
     'border-radius:10px;font-size:15px;opacity:.38;cursor:default;background:rgba(255,255,255,.06);' +
     'transition:opacity .3s,filter .3s,box-shadow .3s;}' +
     '#dsBt.on{opacity:1;box-shadow:0 0 10px rgba(59,130,246,.8);filter:drop-shadow(0 0 4px #3b82f6);}' +
-    /* ---------- 设置行（pill 开关 + 播报模式） ---------- */
-    '#dsSet{display:flex;align-items:center;gap:10px;width:100%;flex-wrap:wrap;}' +
+    '#dsStatus{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.8;' +
+    'font-size:12px;color:#93c5fd;margin-left:auto;}' +
+    /* ---------- 菜单面板（设置 / 关于 双 tab） ---------- */
+    '#dsAbout{position:fixed;top:56px;right:8px;z-index:2147483646;display:none;min-width:280px;' +
+    'background:rgba(24,26,38,.97);color:#fff;border:1px solid rgba(255,255,255,.12);' +
+    'border-radius:14px;padding:12px 14px;font:13px/1.5 system-ui,-apple-system,sans-serif;' +
+    'box-shadow:0 12px 32px rgba(0,0,0,.55);}' +
+    '#dsAbout.show{display:block;}' +
+    '#dsTabs{display:flex;gap:6px;margin-bottom:10px;}' +
+    '#dsTabs button{flex:1;background:rgba(255,255,255,.08);color:#d1d5db;border:0;border-radius:8px;' +
+    'padding:6px 0;font-size:13px;cursor:pointer;}' +
+    '#dsTabs button.on{background:#3b82f6;color:#fff;font-weight:500;}' +
+    '#dsPanelSet,#dsPanelAbout{display:none;}' +
+    '#dsPanelSet.show,#dsPanelAbout.show{display:block;}' +
     '.dsSw{display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#dbeafe;' +
-    'background:rgba(255,255,255,.07);padding:3px 8px;border-radius:9px;}' +
+    'background:rgba(255,255,255,.07);padding:4px 8px;border-radius:9px;margin:0 8px 8px 0;}' +
     '.dsSw input{display:none;}' +
     '.dsSw .dsTrack{width:30px;height:17px;border-radius:9px;background:#52525b;position:relative;transition:background .2s;}' +
     '.dsSw .dsThumb{position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;' +
@@ -44,26 +56,18 @@
     '.dsSw input:checked + .dsTrack .dsThumb{left:15px;}' +
     '#dsMode{background:#1f2937;color:#e5e7eb;border:1px solid rgba(255,255,255,.14);border-radius:8px;' +
     'padding:3px 6px;font-size:12px;cursor:pointer;outline:none;}' +
-    '#dsKw{background:#f59e0b;color:#1f2937;font-weight:700;padding:3px 8px;border-radius:8px;' +
-    'font-size:12px;cursor:pointer;user-select:none;box-shadow:0 1px 4px rgba(245,158,11,.4);}' +
+    '#dsKw{display:inline-block;background:#f59e0b;color:#1f2937;font-weight:700;padding:4px 10px;' +
+    'border-radius:8px;font-size:12px;cursor:pointer;user-select:none;box-shadow:0 1px 4px rgba(245,158,11,.4);' +
+    'vertical-align:middle;}' +
     '#dsKw:active{transform:scale(.92);}' +
-    '#dsStatus{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.8;' +
-    'font-size:12px;color:#93c5fd;margin-left:auto;}' +
-    /* ---------- 关于面板（右上角 ⋯ 菜单） ---------- */
-    '#dsAbout{position:fixed;top:56px;right:8px;z-index:2147483646;display:none;min-width:250px;' +
-    'background:rgba(24,26,38,.97);color:#fff;border:1px solid rgba(255,255,255,.12);' +
-    'border-radius:14px;padding:14px 16px;font:13px/1.5 system-ui,-apple-system,sans-serif;' +
-    'box-shadow:0 12px 32px rgba(0,0,0,.55);}' +
-    '#dsAbout.show{display:block;}' +
-    '#dsAbout .dsTitle{font-size:15px;font-weight:700;margin-bottom:4px;}' +
-    '#dsAbout .dsSec{margin:10px 0 4px;font-size:12px;color:#9ca3af;letter-spacing:1px;}' +
+    '#dsAbout .dsSec{margin:8px 0 4px;font-size:12px;color:#9ca3af;letter-spacing:1px;}' +
     '#dsAbout .dsCur{margin:2px 0;font-size:14px;color:#e5e7eb;}' +
     '#dsAbout .dsVer{color:#f59e0b;font-weight:800;font-size:16px;}' +
-    '#dsAbout .dsFeat{color:#93c5fd;margin:4px 0 8px;line-height:1.8;}' +
-    '#dsAbout button{display:inline-flex;align-items:center;gap:6px;margin-right:8px;' +
+    '#dsAbout .dsFeat{color:#93c5fd;margin:4px 0 10px;line-height:1.8;}' +
+    '#dsAbout .dsBtn{display:inline-flex;align-items:center;gap:6px;margin:0 8px 0 0;' +
     'background:linear-gradient(145deg,#3b82f6,#2563eb);color:#fff;border:0;border-radius:9px;' +
     'padding:7px 14px;font-size:13px;cursor:pointer;}' +
-    '#dsAbout button:active{transform:scale(.95);}' +
+    '#dsAbout .dsBtn:active{transform:scale(.95);}' +
     '#dsAbout #dsAboutClose{background:#4b5563;margin-right:0;}';
 
   var style = document.createElement('style');
@@ -76,29 +80,36 @@
     '<button id="dsMic" title="语音输入（点一下说话，说完自动发送）">🎤</button>' +
     '<button id="dsWake" title="免手模式：说唤醒词才输入，回复自动播报">🛎</button>' +
     '<button id="dsImg" title="眼镜图片：用最新照片（智能眼镜优先）作为输入">📷</button>' +
-    '<button id="dsMenu" title="设置：版本、更新与功能">⚙️</button>' +
+    '<button id="dsMenu" title="设置与关于">⚙️</button>' +
     '<span id="dsBt" title="蓝牙耳机：连上后语音输入走耳机麦克风、播报走耳机">🎧</span>' +
-    '<div id="dsSet">' +
-    '<label class="dsSw">输入<input type="checkbox" id="dsInChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
-    '<label class="dsSw">播报<input type="checkbox" id="dsOutChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
-    '<label class="dsSw" title="播报长度：结论=只播前60字，简短=前150字，完整=全文">播报<select id="dsMode">' +
-    '<option value="brief">简短</option><option value="key">结论</option><option value="full">完整</option></select></label>' +
-    '<label class="dsSw" title="开启后必须说唤醒词才作为输入，防周围语音误输入">唤醒词<input type="checkbox" id="dsGuard"><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
-    '<span id="dsKw" title="点我修改唤醒词">小深</span>' +
-    '<span id="dsStatus"></span>' +
-    '</div>';
+    '<span id="dsStatus"></span>';
   document.body.appendChild(bar);
 
-  // 设置面板（右上角 ⚙️）：版本与更新 + 功能呈现
+  // 菜单面板：设置 / 关于 双 tab
   var about = document.createElement('div');
   about.id = 'dsAbout';
   about.innerHTML =
-    '<div class="dsTitle">⚙️ 设置</div>' +
+    '<div id="dsTabs">' +
+    '<button id="dsTabSet" class="on">设置</button>' +
+    '<button id="dsTabAbout">关于</button>' +
+    '</div>' +
+    '<div id="dsPanelSet" class="show">' +
+    '<div class="dsSec">语音输入</div>' +
+    '<label class="dsSw">转文字<input type="checkbox" id="dsInChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
+    '<div class="dsSec">语音播报</div>' +
+    '<label class="dsSw">朗读回复<input type="checkbox" id="dsOutChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
+    '<label class="dsSw">模式<select id="dsMode">' +
+    '<option value="brief">简短</option><option value="key">结论</option><option value="full">完整</option></select></label>' +
+    '<div class="dsSec">免手唤醒</div>' +
+    '<label class="dsSw" title="开启后必须说唤醒词才作为输入，防周围语音误输入">唤醒词才输入<input type="checkbox" id="dsGuard"><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
+    '<span id="dsKw" title="点我修改唤醒词">小深</span>' +
+    '</div>' +
+    '<div id="dsPanelAbout">' +
     '<div class="dsSec">版本与更新</div>' +
     '<div class="dsCur">当前版本：<span class="dsVer" id="dsVer">--</span></div>' +
-    '<div style="margin:10px 0 4px;">' +
-    '<button id="dsAboutUpd">🔄 手动检查更新</button>' +
-    '<button id="dsAboutClose">✕ 关闭</button>' +
+    '<div style="margin:10px 0 6px;">' +
+    '<button class="dsBtn" id="dsAboutUpd">🔄 检查更新</button>' +
+    '<button class="dsBtn" id="dsAboutClose">✕ 关闭</button>' +
     '</div>' +
     '<div class="dsSec">功能</div>' +
     '<div class="dsFeat">' +
@@ -106,6 +117,7 @@
     '<span>🔊 语音播报：回复自动朗读</span>' +
     '<span>🛎 免手唤醒：说唤醒词才输入</span>' +
     '<span>📷 眼镜图片：最新照片作输入</span>' +
+    '</div>' +
     '</div>';
   document.body.appendChild(about);
 
@@ -124,7 +136,21 @@
   var wakeOn = false;
   var wakeWord = '小深';
 
-  // 关于面板逻辑：显示版本号、展开/收起、检查更新
+  // 双 tab 切换：设置 / 关于
+  var tabSet = document.getElementById('dsTabSet');
+  var tabAbout = document.getElementById('dsTabAbout');
+  var panelSet = document.getElementById('dsPanelSet');
+  var panelAbout = document.getElementById('dsPanelAbout');
+  function showTab(which) {
+    tabSet.classList.toggle('on', which === 'set');
+    tabAbout.classList.toggle('on', which === 'about');
+    panelSet.classList.toggle('show', which === 'set');
+    panelAbout.classList.toggle('show', which === 'about');
+  }
+  tabSet.onclick = function () { showTab('set'); };
+  tabAbout.onclick = function () { showTab('about'); };
+
+  // 关于：显示版本号、展开/收起、检查更新
   try {
     var ver = typeof VoiceBridge !== 'undefined' && VoiceBridge.getVersionName && VoiceBridge.getVersionName();
     if (ver) document.getElementById('dsVer').textContent = 'v' + ver;
@@ -216,7 +242,7 @@
     } catch (e) { status.textContent = '图片上传不可用'; }
   };
 
-  // 原生回传：{type:'start'|'partial'|'final'|'error'|'wake', text:''}
+  // 原生回传：{type:'start'|'partial'|'final'|'error'|'wake'|'done', text:''}
   window.__onSpeech = function (obj) {
     if (!obj) return;
     if (obj.type === 'start') { mic.classList.add('on'); status.textContent = '聆听中…'; }
@@ -255,6 +281,17 @@
         sendMsg();
       } else {
         status.textContent = '已识别（输入已关闭，未发送）';
+      }
+    }
+    else if (obj.type === 'done') {
+      // 播报完毕：按"输入"开关决定是否恢复免手监听、继续接收语音并转文字
+      if (wakeOn) {
+        if (inOn) {
+          try { VoiceBridge.resumeWake(); } catch (e) { }
+          status.textContent = '免手待命：说「' + wakeWord + '」';
+        } else {
+          status.textContent = '播报完毕（输入已关闭，暂停接收语音）';
+        }
       }
     }
   };
@@ -318,7 +355,7 @@
   }
 
   // 捕获 AI 回复并播报（防抖 1.2s，只读最终完整文本；播报前先播输出提示音，按模式截断精简）。
-  // 输入框只用于显示麦克风采集的语音文字；AI 输出仅精简播报，不回填输入框。
+  // 免手模式：播报开始前暂停唤醒监听（避免采集到播报声），播报完毕由 done 事件决定是否恢复。
   var lastText = '';
   var timer = null;
   var lastSpoken = '';
@@ -334,7 +371,8 @@
       (!lastSpoken || txt.indexOf(lastSpoken) !== 0)) {
       lastText = txt;
       if (typeof VoiceBridge !== 'undefined') {
-        VoiceBridge.playTone('out');                       // 输出提示音（思考完成）
+        if (wakeOn) { try { VoiceBridge.pauseWake(); } catch (e) { } }   // 播报期间暂停免手监听
+        VoiceBridge.playTone('out');                                     // 输出提示音（思考完成）
         setTimeout(function () { VoiceBridge.speak(trimReply(txt)); }, 450);
         lastSpoken = txt;
       }
