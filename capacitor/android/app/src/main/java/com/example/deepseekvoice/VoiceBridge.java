@@ -104,7 +104,8 @@ public class VoiceBridge {
                     if (wakeActive) {
                         handleWakeResult(text);
                     } else {
-                        if (!text.isEmpty()) emit("partial", text);
+                        // 识别完成：final 供网页"说完即发"（partial 已做流式预览）
+                        if (!text.isEmpty()) emit("final", text);
                         endSco();
                     }
                 }

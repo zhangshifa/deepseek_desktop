@@ -1,24 +1,51 @@
-/* DeepSeek 语音层（Web 技术）：浮动工具条 + 语音输入/播报开关 + 免手模式（关键字唤醒）。
+/* DeepSeek 语音层（Web 技术）：浮动工具条 + 语音输入/播报开关 + 免手模式（关键字唤醒）+ 在线更新 + 眼镜图片。
    由原生在 chat.deepseek.com 页面加载后注入。
-   免手模式：说唤醒词（默认"小深"，可点 🛎 修改）→ 输入提示音 → 内容自动填入并发送 → AI 思考 → 输出提示音 → 播报。 */
+   交互：
+   🎤 点一下说话，说完自动填入并发送（final 事件）；
+   🛎 免手模式：说唤醒词（默认"小深"）→ 内容自动填入并发送 → 回复播报；
+   📷 智能眼镜最新照片作为图片输入；🔄 在线检查更新；🎧 蓝牙耳机状态；
+   播报模式（完整/简短/结论）可切换并记忆，避免回复太长结论不明确。 */
 (function () {
   if (window.__dsInjected) return;
   window.__dsInjected = true;
 
   var css = '' +
-    '#dsBar{position:fixed;top:8px;right:8px;z-index:2147483647;display:flex;align-items:center;gap:8px;' +
-    'background:rgba(20,20,30,.92);color:#fff;padding:8px 10px;border-radius:12px;' +
-    'font:13px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.45);}' +
-    '#dsBar button{background:#3b82f6;color:#fff;border:0;border-radius:8px;width:36px;height:36px;' +
-    'font-size:18px;cursor:pointer;}' +
-    '#dsBar button.on{background:#ef4444;animation:dsPulse 1s infinite;}' +
-    '@keyframes dsPulse{0%{opacity:1}50%{opacity:.5}100%{opacity:1}}' +
-    '#dsBar label{display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none;}' +
-    '#dsStatus{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85;}' +
-    '#dsBt{opacity:.35;font-size:15px;cursor:default;transition:opacity .3s,filter .3s;}' +
-    '#dsBt.on{opacity:1;filter:drop-shadow(0 0 4px #3b82f6);}' +
-    '#dsWake{background:#6b7280;}' +
-    '#dsWake.on{background:#10b981;animation:none;}';
+    /* ---------- 工具条容器：flex 换行，窄屏不划屏 ---------- */
+    '#dsBar{position:fixed;top:8px;right:8px;z-index:2147483647;display:flex;flex-wrap:wrap;' +
+    'align-items:center;gap:6px 8px;max-width:calc(100vw - 16px);box-sizing:border-box;' +
+    'background:rgba(17,18,26,.94);color:#fff;padding:8px 10px;border-radius:14px;' +
+    'font:13px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 6px 22px rgba(0,0,0,.5);' +
+    'backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.08);}' +
+    /* ---------- 图标按钮 ---------- */
+    '#dsBar button{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;' +
+    'background:linear-gradient(145deg,#3b82f6,#2563eb);color:#fff;border:0;border-radius:10px;' +
+    'font-size:17px;cursor:pointer;transition:transform .12s,box-shadow .12s,filter .12s;' +
+    'box-shadow:0 2px 6px rgba(37,99,235,.35);}' +
+    '#dsBar button:hover{filter:brightness(1.12);transform:translateY(-1px);}' +
+    '#dsBar button:active{transform:scale(.9);}' +
+    '#dsBar button.on{background:linear-gradient(145deg,#ef4444,#dc2626);box-shadow:0 2px 8px rgba(239,68,68,.5);animation:dsPulse 1.1s infinite;}' +
+    '#dsBar button:disabled{opacity:.35;cursor:not-allowed;filter:grayscale(.6);}' +
+    '@keyframes dsPulse{0%{opacity:1}50%{opacity:.55}100%{opacity:1}}' +
+    '#dsWake{background:linear-gradient(145deg,#6b7280,#4b5563);box-shadow:0 2px 6px rgba(75,85,99,.35);}' +
+    '#dsWake.on{background:linear-gradient(145deg,#10b981,#059669);box-shadow:0 2px 8px rgba(16,185,129,.5);animation:none;}' +
+    '#dsBt{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;' +
+    'border-radius:10px;font-size:15px;opacity:.38;cursor:default;background:rgba(255,255,255,.06);' +
+    'transition:opacity .3s,filter .3s,box-shadow .3s;}' +
+    '#dsBt.on{opacity:1;box-shadow:0 0 10px rgba(59,130,246,.8);filter:drop-shadow(0 0 4px #3b82f6);}' +
+    /* ---------- 设置行（pill 开关 + 播报模式） ---------- */
+    '#dsSet{display:flex;align-items:center;gap:10px;width:100%;flex-wrap:wrap;}' +
+    '.dsSw{display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#dbeafe;' +
+    'background:rgba(255,255,255,.07);padding:3px 8px;border-radius:9px;}' +
+    '.dsSw input{display:none;}' +
+    '.dsSw .dsTrack{width:30px;height:17px;border-radius:9px;background:#52525b;position:relative;transition:background .2s;}' +
+    '.dsSw .dsThumb{position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;' +
+    'background:#fff;transition:left .18s ease;box-shadow:0 1px 2px rgba(0,0,0,.4);}' +
+    '.dsSw input:checked + .dsTrack{background:#22c55e;}' +
+    '.dsSw input:checked + .dsTrack .dsThumb{left:15px;}' +
+    '#dsMode{background:#1f2937;color:#e5e7eb;border:1px solid rgba(255,255,255,.14);border-radius:8px;' +
+    'padding:3px 6px;font-size:12px;cursor:pointer;outline:none;}' +
+    '#dsStatus{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.8;' +
+    'font-size:12px;color:#93c5fd;margin-left:auto;}';
 
   var style = document.createElement('style');
   style.textContent = css;
@@ -27,14 +54,18 @@
   var bar = document.createElement('div');
   bar.id = 'dsBar';
   bar.innerHTML =
-    '<button id="dsMic" title="语音输入（点一下说话）">🎤</button>' +
+    '<button id="dsMic" title="语音输入（点一下说话，说完自动发送）">🎤</button>' +
     '<button id="dsWake" title="免手模式：说唤醒词才输入，回复自动播报">🛎</button>' +
     '<button id="dsImg" title="眼镜图片：用最新照片（智能眼镜优先）作为输入">📷</button>' +
     '<button id="dsUpd" title="检查更新：在线检测新版本并升级">🔄</button>' +
     '<span id="dsBt" title="蓝牙耳机：连上后语音输入走耳机麦克风、播报走耳机">🎧</span>' +
-    '<label>输入<input type="checkbox" id="dsInChk" checked></label>' +
-    '<label>播报<input type="checkbox" id="dsOutChk" checked></label>' +
-    '<span id="dsStatus"></span>';
+    '<div id="dsSet">' +
+    '<label class="dsSw">输入<input type="checkbox" id="dsInChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
+    '<label class="dsSw">播报<input type="checkbox" id="dsOutChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
+    '<label class="dsSw" title="播报长度：结论=只播前60字，简短=前150字，完整=全文">播报<select id="dsMode">' +
+    '<option value="brief">简短</option><option value="key">结论</option><option value="full">完整</option></select></label>' +
+    '<span id="dsStatus"></span>' +
+    '</div>';
   document.body.appendChild(bar);
 
   var mic = document.getElementById('dsMic');
@@ -44,12 +75,24 @@
   var btIcon = document.getElementById('dsBt');
   var inChk = document.getElementById('dsInChk');
   var outChk = document.getElementById('dsOutChk');
+  var modeSel = document.getElementById('dsMode');
   var status = document.getElementById('dsStatus');
-  var inOn = true, outOn = true;
+  var inOn = true, outOn = true, mode = 'brief';
   var wakeOn = false;
   var wakeWord = '小深';
   inChk.onchange = function () { inOn = inChk.checked; };
   outChk.onchange = function () { outOn = outChk.checked; };
+  modeSel.onchange = function () {
+    mode = modeSel.value;
+    try { localStorage.setItem('dsMode', mode); } catch (e) { }
+  };
+  try {
+    var saved = localStorage.getItem('dsMode');
+    if (saved && ['brief', 'key', 'full'].indexOf(saved) >= 0) {
+      mode = saved;
+      modeSel.value = saved;
+    }
+  } catch (e) { }
 
   // 刷新蓝牙耳机连接状态（连接后输入走耳机麦克风、播报走耳机）
   function refreshBt() {
@@ -79,13 +122,13 @@
       VoiceBridge.startWake(wakeWord);
       wakeOn = true;
       wakeBtn.classList.add('on');
-      mic.disabled = true; mic.style.opacity = .4;
+      mic.disabled = true;
       status.textContent = '免手待命：说「' + wakeWord + '」（间隔监听，无唤醒词不入输入）';
     } else {
       VoiceBridge.stopWake();
       wakeOn = false;
       wakeBtn.classList.remove('on');
-      mic.disabled = false; mic.style.opacity = 1;
+      mic.disabled = false;
       status.textContent = '';
     }
   };
@@ -112,14 +155,19 @@
     } catch (e) { status.textContent = '检查更新不可用'; }
   };
 
-  // 原生回传：{type:'start'|'partial'|'error'|'wake', text:''}
+  // 原生回传：{type:'start'|'partial'|'final'|'error'|'wake', text:''}
   window.__onSpeech = function (obj) {
     if (!obj) return;
     if (obj.type === 'start') { mic.classList.add('on'); status.textContent = '聆听中…'; }
     else if (obj.type === 'partial') { status.textContent = obj.text || '聆听中…'; if (obj.text) fillInput(obj.text); }
+    else if (obj.type === 'final') {
+      // 说完即发：自动填入并发送给 DeepSeek
+      mic.classList.remove('on');
+      status.textContent = '已发送';
+      if (obj.text) { fillInput(obj.text, true); sendMsg(); }
+    }
     else if (obj.type === 'error') { mic.classList.remove('on'); status.textContent = '语音错误'; }
     else if (obj.type === 'wake') {
-      // 关键字命中：内容作为输入，自动发送
       status.textContent = '已唤醒，发送…';
       if (obj.text) { fillInput(obj.text, true); sendMsg(); }
       else { status.textContent = '唤醒成功，请说内容'; }
@@ -159,7 +207,19 @@
     } catch (e) { }
   }
 
-  // 捕获 AI 回复并播报（防抖 1.2s，只读最终完整文本；播报前先播输出提示音）
+  // 播报模式截断：完整=全文 / 简短=前150字 / 结论=前60字（尽量在句末截断）
+  var MODE_LIMIT = { full: 0, brief: 150, key: 60 };
+  function trimReply(txt) {
+    var limit = MODE_LIMIT[mode] || 0;
+    if (!limit || txt.length <= limit) return txt;
+    var slice = txt.slice(0, limit);
+    var cut = Math.max(slice.lastIndexOf('。'), slice.lastIndexOf('！'),
+      slice.lastIndexOf('？'), slice.lastIndexOf('.'), slice.lastIndexOf('\n'));
+    if (cut > limit * 0.3) slice = slice.slice(0, cut + 1);
+    return slice + '…';
+  }
+
+  // 捕获 AI 回复并播报（防抖 1.2s，只读最终完整文本；播报前先播输出提示音，按模式截断精简）
   var lastText = '';
   var timer = null;
   var lastSpoken = '';
@@ -171,13 +231,12 @@
     if (!nodes || !nodes.length) return;
     var node = nodes[nodes.length - 1];
     var txt = (node.innerText || '').trim();
-    // 流式追加时 txt 会以 lastSpoken 为前缀，跳过直到文本稳定（完整回复）
     if (txt && txt !== lastText && txt !== lastSpoken &&
-        (!lastSpoken || txt.indexOf(lastSpoken) !== 0)) {
+      (!lastSpoken || txt.indexOf(lastSpoken) !== 0)) {
       lastText = txt;
       if (typeof VoiceBridge !== 'undefined') {
         VoiceBridge.playTone('out');                       // 输出提示音（思考完成）
-        setTimeout(function () { VoiceBridge.speak(txt); }, 450);
+        setTimeout(function () { VoiceBridge.speak(trimReply(txt)); }, 450);
         lastSpoken = txt;
       }
     }
