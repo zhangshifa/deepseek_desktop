@@ -223,6 +223,7 @@
   var lastText = '';
   var timer = null;
   var lastSpoken = '';
+  var lastReplyFilled = '';   // 上次自动填入输入框的结论（用于保护用户正在输入的新内容）
   function pickReply() {
     if (!outOn) return;
     var nodes = document.querySelectorAll(
@@ -235,11 +236,39 @@
       (!lastSpoken || txt.indexOf(lastSpoken) !== 0)) {
       lastText = txt;
       if (typeof VoiceBridge !== 'undefined') {
+        // 按播报模式截断：同时用于"自动加载到输入框显示结论"和 TTS 播报，保持一致
+        var show = trimReply(txt);
         VoiceBridge.playTone('out');                       // 输出提示音（思考完成）
-        setTimeout(function () { VoiceBridge.speak(trimReply(txt)); }, 450);
+        setTimeout(function () {
+          fillReply(show);                                 // 结论自动加载到输入框显示（不发送）
+          VoiceBridge.speak(show);                         // 播报同样精简文本
+        }, 450);
         lastSpoken = txt;
       }
     }
+  }
+
+  // 按播报模式把结论自动填入输入框显示（不发送）；若用户正在输入新内容则不覆盖
+  function fillReply(text) {
+    if (!outOn || !text) return;
+    var box = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
+    if (!box) return;
+    try {
+      var cur = '';
+      if (box.tagName === 'TEXTAREA' || box.tagName === 'INPUT') cur = box.value || '';
+      else cur = box.innerText || '';
+      if (cur.trim() && cur !== lastReplyFilled) return;   // 用户正在写新问题，别覆盖
+      if (box.tagName === 'TEXTAREA' || box.tagName === 'INPUT') {
+        var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+        setter.call(box, text);
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        box.innerText = text;
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      lastReplyFilled = text;
+      status.textContent = '结论已显示在输入框（回车可追问）';
+    } catch (e) { }
   }
   var obs = new MutationObserver(function () {
     if (!outOn) return;
