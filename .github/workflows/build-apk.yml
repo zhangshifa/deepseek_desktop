@@ -38,11 +38,18 @@ jobs:
           build-root-directory: capacitor/android
           arguments: ':app:assembleDebug --no-daemon'
 
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: app-debug-apk
+          path: capacitor/android/app/build/outputs/apk/debug/*.apk
+
       - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag: apk-debug-${{ github.run_id }}
+          tag_name: apk-debug-${{ github.run_id }}
           name: DeepSeekVoice Debug APK (${{ github.run_id }})
           body: |
             由 GitHub Actions 云编译生成（Capacitor 网页语音版）。
