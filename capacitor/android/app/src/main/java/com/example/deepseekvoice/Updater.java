@@ -5,8 +5,10 @@ import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -157,6 +159,11 @@ public class Updater {
 
     /** 拉起系统安装器（FileProvider 授权给系统安装器读取缓存 APK）。 */
     private void install(File apk) {
+        // Android 8+：安装 APK 需"允许安装未知应用"权限，缺失时引导一键授权
+        if (Build.VERSION.SDK_INT >= 26 && !context.getPackageManager().canRequestPackageInstalls()) {
+            promptInstallPermission();
+            return;
+        }
         try {
             Uri uri = FileProvider.getUriForFile(context,
                     context.getPackageName() + ".fileprovider", apk);
@@ -169,6 +176,26 @@ public class Updater {
             Log.e(TAG, "install failed", e);
             toast("无法打开安装器，请在设置中允许安装未知应用");
         }
+    }
+
+    /** 弹窗引导用户打开"允许安装未知应用"开关（跳转系统授权页）。 */
+    private void promptInstallPermission() {
+        new AlertDialog.Builder(context)
+                .setTitle("需要安装权限")
+                .setMessage("安装更新需要开启「允许安装未知应用」。\n点击"去设置"，打开 DeepSeekVoice 的开关后返回重试。")
+                .setPositiveButton("去设置", (d, w) -> {
+                    try {
+                        Intent i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                        i.setData(Uri.parse("package:" + context.getPackageName()));
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(i);
+                    } catch (Exception e) {
+                        Log.e(TAG, "open unknown sources settings failed", e);
+                        toast("无法打开设置页，请手动到 设置→应用→DeepSeekVoice→允许安装未知应用");
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     private void toast(String msg) {
