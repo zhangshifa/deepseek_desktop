@@ -109,7 +109,7 @@ public class BluetoothAudio {
     }
 
     private AudioDeviceInfo pickScoDevice() {
-        AudioDeviceInfo[] devs = audioManager.getAvailableCommunicationDevices();
+        java.util.List<AudioDeviceInfo> devs = audioManager.getAvailableCommunicationDevices();
         if (devs == null) return null;
         for (AudioDeviceInfo d : devs) {
             if (d.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
