@@ -251,8 +251,8 @@
     if (obj.type === 'start') { mic.classList.add('on'); status.textContent = '聆听中…'; }
     else if (obj.type === 'partial') {
       status.textContent = obj.text || '聆听中…';
-      // 开启"结尾小深发送"时识别文字实时显示在输入框（不受"唤醒词才输入"拦截）
-      if (obj.text && (tailOn || !guardOn)) fillInput(obj.text);
+      // 开启"结尾小深发送"时识别文字实时显示在输入框（不受"唤醒词才输入"拦截）；静默填充不刷提示
+      if (obj.text && (tailOn || !guardOn)) fillInput(obj.text, true);
     }
     else if (obj.type === 'final') {
       // 说完即发：受"输入"开关与"唤醒词才输入"开关控制；"结尾小深发送"开启时以结尾唤醒词为发送信号
@@ -343,30 +343,80 @@
     return null;
   }
 
-  function fillInput(text, silent) {
-    if (!inOn) return;                     // "输入"开关关闭时不填入输入框
-    // DeepSeek 输入框是富文本编辑器（contenteditable/ProseMirror）：优先 role="textbox"，再 textarea
-    var box = document.querySelector('[role="textbox"], textarea, [contenteditable="true"]');
-    if (!box) return;
+  // 查找当前可用的聊天输入框：优先可见元素；主文档找不到则穿透 iframe（DeepSeek 页面结构可能变化）
+  function findInputBox() {
+    var sel = '[contenteditable="true"], [role="textbox"], textarea, div[contenteditable], input[type="text"]';
+    function scan(doc) {
+      var els = doc.querySelectorAll(sel);
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        try {
+          var r = el.getBoundingClientRect();
+          if (r.width > 4 && r.height > 4) return el;   // 只取可见可编辑元素
+        } catch (e) { return els[i]; }
+      }
+      return null;
+    }
+    var box = scan(document);
+    if (box) return box;
+    try {
+      var frames = document.querySelectorAll('iframe');
+      for (var j = 0; j < frames.length; j++) {
+        try {
+          var d = frames[j].contentDocument;
+          if (d) { box = scan(d); if (box) return box; }
+        } catch (e) { }
+      }
+    } catch (e) { }
+    return null;
+  }
+
+  // 向输入框注入文本（多级 fallback：execCommand → 原生 setter → 直接赋值），返回是否成功
+  function setBoxText(box, text) {
+    if (!box) return false;
     try {
       if (box.tagName === 'TEXTAREA' || box.tagName === 'INPUT') {
-        var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-        setter.call(box, text);
+        try {
+          var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+          if (setter) setter.call(box, text); else box.value = text;
+        } catch (e2) { box.value = text; }
         box.dispatchEvent(new Event('input', { bubbles: true }));
-      } else {
-        // contenteditable：用 execCommand insertText 触发编辑器原生输入，内部状态才会同步
-        box.focus();
+        return (box.value || '').indexOf(text) >= 0;
+      }
+      // contenteditable（富文本编辑器）
+      box.focus();
+      var ok = false;
+      try {
         document.execCommand('selectAll', false, null);
         document.execCommand('insertText', false, text);
+        ok = (box.innerText || '').indexOf(text) >= 0;
+      } catch (e) { ok = false; }
+      if (!ok) {
+        box.innerText = text;                                  // fallback：直接赋值
+        box.dispatchEvent(new Event('input', { bubbles: true }));
         box.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+        ok = (box.innerText || '').indexOf(text) >= 0;
       }
-      if (!silent) status.textContent = '已填入';
-    } catch (e) { }
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  function fillInput(text, silent) {
+    if (!inOn) return false;                     // "输入"开关关闭时不填入输入框
+    var box = findInputBox();
+    if (!box) {
+      status.textContent = '未找到输入框（页面结构变化）';
+      return false;
+    }
+    var ok = setBoxText(box, text);
+    if (!ok) status.textContent = '输入框注入失败';
+    else if (!silent) status.textContent = '已填入';
+    return ok;
   }
 
   // 模拟回车发送（优先），不行再找发送按钮点击
   function sendMsg() {
-    var box = document.querySelector('[role="textbox"], textarea, [contenteditable="true"]');
+    var box = findInputBox();
     if (box) {
       try {
         box.focus();
@@ -376,7 +426,7 @@
         setTimeout(function () {
           // 兜底：Enter 后若输入框仍有内容未发出，改点发送按钮
           try {
-            var still = document.querySelector('[role="textbox"], textarea');
+            var still = findInputBox();
             var cur = still && (still.value || still.innerText || '').trim();
             if (cur) {
               var btn = document.querySelector('button[class*="send"], [class*="send"] button, button[aria-label*="发送"], button[type="submit"]');
