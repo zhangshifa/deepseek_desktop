@@ -96,6 +96,7 @@
     '<div id="dsPanelSet" class="show">' +
     '<div class="dsSec">语音输入</div>' +
     '<label class="dsSw">转文字<input type="checkbox" id="dsInChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
+    '<label class="dsSw" title="识别文字实时显示在输入框，说话以唤醒词结尾（如：查天气小深）自动发送">结尾小深发送<input type="checkbox" id="dsTail"><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
     '<div class="dsSec">语音播报</div>' +
     '<label class="dsSw">朗读回复<input type="checkbox" id="dsOutChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
     '<label class="dsSw">模式<select id="dsMode">' +
@@ -130,9 +131,10 @@
   var outChk = document.getElementById('dsOutChk');
   var modeSel = document.getElementById('dsMode');
   var guardChk = document.getElementById('dsGuard');
+  var tailChk = document.getElementById('dsTail');
   var kwLbl = document.getElementById('dsKw');
   var status = document.getElementById('dsStatus');
-  var inOn = true, outOn = true, mode = 'brief', guardOn = false;
+  var inOn = true, outOn = true, mode = 'brief', guardOn = false, tailOn = false;
   var wakeOn = false;
   var wakeWord = '小深';
 
@@ -172,6 +174,7 @@
   inChk.onchange = function () { inOn = inChk.checked; };
   outChk.onchange = function () { outOn = outChk.checked; };
   guardChk.onchange = function () { guardOn = guardChk.checked; };
+  tailChk.onchange = function () { tailOn = tailChk.checked; };
   // 点唤醒词文字修改唤醒词（同时作用于"唤醒词才能输入"与免手模式）
   kwLbl.onclick = function () {
     var kw = prompt('输入唤醒词（说它才作为输入）：', wakeWord);
@@ -248,11 +251,11 @@
     if (obj.type === 'start') { mic.classList.add('on'); status.textContent = '聆听中…'; }
     else if (obj.type === 'partial') {
       status.textContent = obj.text || '聆听中…';
-      // 开启"唤醒词才能输入"时不预填输入框（等 final 判断是否命中唤醒词），防误输入
-      if (!guardOn && obj.text) fillInput(obj.text);
+      // 开启"结尾小深发送"时识别文字实时显示在输入框（不受"唤醒词才输入"拦截）
+      if (obj.text && (tailOn || !guardOn)) fillInput(obj.text);
     }
     else if (obj.type === 'final') {
-      // 说完即发：自动填入并发送给 DeepSeek（受"输入"开关与唤醒词开关控制）
+      // 说完即发：受"输入"开关与"唤醒词才输入"开关控制；"结尾小深发送"开启时以结尾唤醒词为发送信号
       mic.classList.remove('on');
       var t = obj.text || '';
       if (guardOn) {
@@ -264,7 +267,27 @@
         t = rest;
       }
       if (!t) return;
-      if (inOn) {
+      if (tailOn) {
+        var end = stripKwEnd(t);
+        if (end !== null) {
+          // 以"小深"结尾：去掉结尾唤醒词，填入输入框并发送
+          if (inOn) {
+            status.textContent = '已发送';
+            fillInput(end, false);
+            sendMsg();
+          } else {
+            status.textContent = '已识别（输入已关闭，未发送）';
+          }
+        } else {
+          // 未以小深结尾：文字保留在输入框，用户可继续语音或手动发送
+          if (inOn) {
+            fillInput(t, false);
+            status.textContent = '已填入，说「' + wakeWord + '」结尾或手动发送';
+          } else {
+            status.textContent = '已识别（输入已关闭，未发送）';
+          }
+        }
+      } else if (inOn) {
         status.textContent = '已发送';
         fillInput(t, false);
         sendMsg();
@@ -275,9 +298,10 @@
     else if (obj.type === 'error') { mic.classList.remove('on'); status.textContent = '语音错误'; }
     else if (obj.type === 'wake') {
       if (!obj.text) { status.textContent = '唤醒成功，请说内容'; return; }
+      var wt = tailOn ? (stripKwEnd(obj.text) || obj.text) : obj.text;
       if (inOn) {
         status.textContent = '已唤醒，发送…';
-        fillInput(obj.text, false);
+        fillInput(wt, false);
         sendMsg();
       } else {
         status.textContent = '已识别（输入已关闭，未发送）';
@@ -305,6 +329,16 @@
       if (text.indexOf(wakeWord + seps[i]) === 0) {
         return text.substring(wakeWord.length + seps[i].length).trim();
       }
+    }
+    return null;
+  }
+
+  // 检查文本是否以唤醒词结尾（允许结尾带标点/空格，如"小深""小深。"）；命中返回去除结尾唤醒词后的内容，否则 null
+  function stripKwEnd(text) {
+    if (!text || !wakeWord) return null;
+    var re = new RegExp(wakeWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[，。！？,.!?、\\s]*$');
+    if (re.test(text)) {
+      return text.replace(re, '').trim();
     }
     return null;
   }
