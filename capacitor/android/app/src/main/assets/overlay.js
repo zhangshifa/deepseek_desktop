@@ -77,7 +77,7 @@
   var bar = document.createElement('div');
   bar.id = 'dsBar';
   bar.innerHTML =
-    '<button id="dsMic" title="语音输入（点一下说话，说完自动发送）">🎤</button>' +
+    '<button id="dsMic" title="语音输入（点一下说话，识别完自动发送；仅语音，禁手动输入）">🎤</button>' +
     '<button id="dsWake" title="免手模式：说唤醒词才输入，回复自动播报">🛎</button>' +
     '<button id="dsImg" title="眼镜图片：用最新照片（智能眼镜优先）作为输入">📷</button>' +
     '<button id="dsMenu" title="设置与关于">⚙️</button>' +
@@ -358,18 +358,34 @@
       return null;
     }
     var box = scan(document);
-    if (box) return box;
+    if (box) { blockManualInput(box); return box; }
     try {
       var frames = document.querySelectorAll('iframe');
       for (var j = 0; j < frames.length; j++) {
         try {
           var d = frames[j].contentDocument;
-          if (d) { box = scan(d); if (box) return box; }
+          if (d) { box = scan(d); if (box) { blockManualInput(box); return box; } }
         } catch (e) { }
       }
     } catch (e) { }
     return null;
   }
+
+  // 仅语音输入：阻断手动键入/粘贴/拖入/剪切（只拦 isTrusted 事件；程序化注入 isTrusted=false 不受影响）
+  function blockManualInput(box) {
+    if (!box || box.__dsNoManual) return;
+    box.__dsNoManual = true;
+    var stop = function (e) { if (e.isTrusted) e.preventDefault(); };
+    box.addEventListener('beforeinput', stop);
+    box.addEventListener('paste', stop);
+    box.addEventListener('drop', stop);
+    box.addEventListener('cut', stop);
+  }
+  // 周期扫描并阻断输入框的手动编辑（DeepSeek 为 SPA，切换会话可能重建输入框）
+  function findAndBlock() {
+    try { var b = findInputBox(); if (b) blockManualInput(b); } catch (e) { }
+  }
+  setInterval(findAndBlock, 1000);
 
   // 向输入框注入文本（多级 fallback：execCommand → 原生 setter → 直接赋值），返回是否成功
   function setBoxText(box, text) {
