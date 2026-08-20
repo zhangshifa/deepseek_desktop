@@ -38,12 +38,11 @@ public class Updater {
     private static final String REPO = "zhangshifa/deepseek_desktop";
 
     /**
-     * 内嵌只读令牌：fine-grained、仅本仓库 Contents: Read-only。
-     * 私有仓库 App 端必须带令牌才能读更新源（api.github.com）。
-     * ⚠️ APK 可反编译提取，仅限只读令牌；泄漏风险仅限读取该仓库文件。
-     * 留空则走免令牌路径（仓库公开时可用）。
+     * 仓库已设为公开 → 免令牌：TOKEN 留空，App 端走免令牌路径
+     * （raw.githubusercontent.com / jsdelivr / api.github.com 公开可读，见 MANIFEST_URLS/APK_URLS）。
+     * 旧私有仓库只读令牌已撤销，不再内嵌。
      */
-    private static final String TOKEN = "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";
+    private static final String TOKEN = "";
 
     // api.github.com 放第一（私有仓库带令牌实时可读）；jsdelivr/raw 兜底（公开仓库时可用）
     private static final String[] MANIFEST_URLS = {
