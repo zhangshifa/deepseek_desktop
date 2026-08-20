@@ -311,7 +311,8 @@
 
   function fillInput(text, silent) {
     if (!inOn) return;                     // "输入"开关关闭时不填入输入框
-    var box = document.querySelector('textarea, input[type=text], [contenteditable="true"], [role="textbox"]');
+    // DeepSeek 输入框是富文本编辑器（contenteditable/ProseMirror）：优先 role="textbox"，再 textarea
+    var box = document.querySelector('[role="textbox"], textarea, [contenteditable="true"]');
     if (!box) return;
     try {
       if (box.tagName === 'TEXTAREA' || box.tagName === 'INPUT') {
@@ -319,8 +320,11 @@
         setter.call(box, text);
         box.dispatchEvent(new Event('input', { bubbles: true }));
       } else {
-        box.innerText = text;
-        box.dispatchEvent(new Event('input', { bubbles: true }));
+        // contenteditable：用 execCommand insertText 触发编辑器原生输入，内部状态才会同步
+        box.focus();
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, text);
+        box.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
       }
       if (!silent) status.textContent = '已填入';
     } catch (e) { }
@@ -328,11 +332,24 @@
 
   // 模拟回车发送（优先），不行再找发送按钮点击
   function sendMsg() {
-    var box = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
+    var box = document.querySelector('[role="textbox"], textarea, [contenteditable="true"]');
     if (box) {
       try {
+        box.focus();
+        // 富文本编辑器走 Enter 键发送（ProseMirror 会拦截处理）
         var ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
         box.dispatchEvent(ev);
+        setTimeout(function () {
+          // 兜底：Enter 后若输入框仍有内容未发出，改点发送按钮
+          try {
+            var still = document.querySelector('[role="textbox"], textarea');
+            var cur = still && (still.value || still.innerText || '').trim();
+            if (cur) {
+              var btn = document.querySelector('button[class*="send"], [class*="send"] button, button[aria-label*="发送"], button[type="submit"]');
+              if (btn) btn.click();
+            }
+          } catch (e2) { }
+        }, 500);
         return;
       } catch (e) { }
     }
