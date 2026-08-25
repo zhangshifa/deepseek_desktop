@@ -14,3 +14,6 @@ apk/DSV-*.apk
 captures/
 capacitor/node_modules/
 capacitor/.gradle/
+
+# 桌面版离线语音模型（运行时下载，不入库）
+desktop/models/

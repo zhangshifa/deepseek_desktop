@@ -77,10 +77,10 @@
   var bar = document.createElement('div');
   bar.id = 'dsBar';
   bar.innerHTML =
-    '<button id="dsMic" title="语音输入（点一下说话，识别完自动发送；仅语音，禁手动输入）">🎤</button>' +
+    '<button id="dsMic" title="语音输入：点一下说话，识别完自动发送；麦克风不可用/无权限时可在输入框手动输入">🎤</button>' +
     '<button id="dsWake" title="免手模式：说唤醒词才输入，回复自动播报">🛎</button>' +
     '<button id="dsImg" title="眼镜图片：用最新照片（智能眼镜优先）作为输入">📷</button>' +
-    '<button id="dsMenu" title="设置与关于">⚙️</button>' +
+    '<button id="dsMenu" title="设置（三点菜单）：输入/播报/唤醒词、版本与更新">⋯</button>' +
     '<span id="dsBt" title="蓝牙耳机：连上后语音输入走耳机麦克风、播报走耳机">🎧</span>' +
     '<span id="dsStatus"></span>';
   document.body.appendChild(bar);
@@ -95,7 +95,7 @@
     '</div>' +
     '<div id="dsPanelSet" class="show">' +
     '<div class="dsSec">语音输入</div>' +
-    '<label class="dsSw">转文字<input type="checkbox" id="dsInChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
+    '<label class="dsSw">语音转文字<input type="checkbox" id="dsInChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
     '<label class="dsSw" title="识别文字实时显示在输入框，说话以唤醒词结尾（如：查天气小深）自动发送">结尾小深发送<input type="checkbox" id="dsTail"><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
     '<div class="dsSec">语音播报</div>' +
     '<label class="dsSw">朗读回复<input type="checkbox" id="dsOutChk" checked><span class="dsTrack"><span class="dsThumb"></span></span></label>' +
@@ -114,7 +114,7 @@
     '</div>' +
     '<div class="dsSec">功能</div>' +
     '<div class="dsFeat">' +
-    '<span>🎤 语音输入：说话即转文字</span>' +
+    '<span>🎤 语音输入：说话即转文字（麦克风不可用时可手动输入）</span>' +
     '<span>🔊 语音播报：回复自动朗读</span>' +
     '<span>🛎 免手唤醒：说唤醒词才输入</span>' +
     '<span>📷 眼镜图片：最新照片作输入</span>' +
@@ -137,7 +137,6 @@
   var inOn = true, outOn = true, mode = 'brief', guardOn = false, tailOn = false;
   var wakeOn = false;
   var wakeWord = '小深';
-  var voiceFocusLock = false;   // 聚焦即听锁：识别/发送期间防止 focus 事件死循环触发识别
 
   // 双 tab 切换：设置 / 关于
   var tabSet = document.getElementById('dsTabSet');
@@ -205,14 +204,14 @@
 
   mic.onclick = function () {
     refreshBt();
-    if (typeof VoiceBridge === 'undefined') { status.textContent = '语音不可用'; return; }
+    if (typeof VoiceBridge === 'undefined') { status.textContent = '语音不可用，请在输入框手动输入'; return; }
     if (mic.classList.contains('on')) { VoiceBridge.stopRecognition(); mic.classList.remove('on'); }
     else { VoiceBridge.startRecognition(); }
   };
 
   // 免手模式开关：开启后禁用手动 mic，避免两套监听打架
   wakeBtn.onclick = function () {
-    if (typeof VoiceBridge === 'undefined') { status.textContent = '语音不可用'; return; }
+    if (typeof VoiceBridge === 'undefined') { status.textContent = '语音不可用，请手动输入'; return; }
     if (!wakeOn) {
       var kw = prompt('输入唤醒词（说它才激活输入）：', wakeWord);
       if (!kw || !kw.trim()) return;
@@ -258,7 +257,6 @@
     else if (obj.type === 'final') {
       // 说完即发：受"输入"开关与"唤醒词才输入"开关控制；"结尾小深发送"开启时以结尾唤醒词为发送信号
       mic.classList.remove('on');
-      voiceFocusLock = false;   // 识别完成，允许下一次聚焦输入框即听
       var t = obj.text || '';
       if (guardOn) {
         var rest = stripKw(t);
@@ -297,7 +295,7 @@
         status.textContent = '已识别（输入已关闭，未发送）';
       }
     }
-    else if (obj.type === 'error') { mic.classList.remove('on'); voiceFocusLock = false; status.textContent = '语音错误'; }
+    else if (obj.type === 'error') { mic.classList.remove('on'); status.textContent = '语音不可用，可在输入框手动输入'; }
     else if (obj.type === 'wake') {
       if (!obj.text) { status.textContent = '唤醒成功，请说内容'; return; }
       var wt = tailOn ? (stripKwEnd(obj.text) || obj.text) : obj.text;
@@ -345,44 +343,17 @@
     return null;
   }
 
-  // 查找当前可用的聊天输入框：多级候选（contenteditable/role=textbox/textarea/输入框特征）
-  // 优先带 placeholder/aria-label 且可见的元素；主文档找不到则穿透 iframe（DeepSeek 页面结构可能变化）。
+  // 查找当前可用的聊天输入框：优先可见元素；主文档找不到则穿透 iframe（DeepSeek 页面结构可能变化）
   function findInputBox() {
-    var cands = [
-      'div[contenteditable="true"]',
-      '[contenteditable="true"]',
-      '[role="textbox"]',
-      'textarea',
-      'div[contenteditable]',
-      'input[type="text"]'
-    ];
-    function isVisible(el) {
-      try {
-        var r = el.getBoundingClientRect();
-        return r.width > 4 && r.height > 4;
-      } catch (e) { return true; }
-    }
-    function pick(els) {
-      var best = null, bestScore = -1;
+    var sel = '[contenteditable="true"], [role="textbox"], textarea, div[contenteditable], input[type="text"]';
+    function scan(doc) {
+      var els = doc.querySelectorAll(sel);
       for (var i = 0; i < els.length; i++) {
         var el = els[i];
-        if (!isVisible(el)) continue;
-        // 输入框特征评分：带输入提示(placeholder/aria-label)的最可能是聊天输入框
-        var score = 0;
-        var ph = (el.getAttribute && (el.getAttribute('placeholder') || el.getAttribute('data-placeholder') || el.getAttribute('aria-label'))) || '';
-        if (/输入|发送|消息|message|send|ask|chat/i.test(ph)) score += 3;
-        else if (ph) score += 1;
-        if (el.tagName === 'TEXTAREA') score += 1;
-        if (score > bestScore) { best = el; bestScore = score; }
-      }
-      return best;
-    }
-    function scan(doc) {
-      for (var c = 0; c < cands.length; c++) {
         try {
-          var found = pick(doc.querySelectorAll(cands[c]));
-          if (found) return found;
-        } catch (e) { }
+          var r = el.getBoundingClientRect();
+          if (r.width > 4 && r.height > 4) return el;   // 只取可见可编辑元素
+        } catch (e) { return els[i]; }
       }
       return null;
     }
@@ -400,71 +371,11 @@
     return null;
   }
 
-  // 仅语音输入：彻底禁用手动输入（键盘字符、IME 输入法、粘贴、拖入、剪切、点击光标输入），
-  // 只拦 isTrusted 事件；程序化注入（isTrusted=false）与注入期间（__dsAutoInject）不受影响。
-  // 保留 Enter 与快捷键（Ctrl/Cmd+A/C/V 等）不被误拦。
-  function blockManualInput(box) {
-    if (!box || box.__dsNoManual) return;
-    box.__dsNoManual = true;
-    var allow = function (e) { return e && box.__dsAutoInject; };   // 注入期间放行
-    var stop = function (e) { if (!allow(e) && e.isTrusted) e.preventDefault(); };
-    box.addEventListener('keydown', function (e) {
-      if (allow(e)) return;
-      if (!e.isTrusted) return;
-      // 放行回车（发送）、组合快捷键（复制/粘贴等系统操作）
-      if (e.key === 'Enter' || e.ctrlKey || e.metaKey || e.altKey) return;
-      // 拦截可打印字符与 IME 组合输入
-      if (e.key.length === 1 || e.keyCode === 229) e.preventDefault();
-    });
-    box.addEventListener('keypress', function (e) {
-      if (allow(e)) return;
-      if (e.isTrusted && e.key && e.key.length === 1) e.preventDefault();
-    });
-    box.addEventListener('compositionstart', stop);
-    box.addEventListener('compositionupdate', stop);
-    box.addEventListener('beforeinput', stop);
-    box.addEventListener('input', function (e) {
-      // IME 合成结束的 input 兜底拦截（部分安卓 WebView 不触发 keydown）
-      if (allow(e)) return;
-      if (e.isTrusted && e.inputType && e.inputType.indexOf('insert') === 0) e.preventDefault();
-    });
-    box.addEventListener('paste', stop);
-    box.addEventListener('drop', stop);
-    box.addEventListener('cut', stop);
-  }
-  // 周期扫描并阻断输入框的手动编辑（DeepSeek 为 SPA，切换会话可能重建输入框）
-  function findAndBlock() {
-    try { var b = findInputBox(); if (b) blockManualInput(b); } catch (e) { }
-  }
-  setInterval(findAndBlock, 1000);
+  // 手动输入不再拦截：语音优先、识别完自动发送；麦克风不可用/无权限时用户可直接在输入框打字（Enter 发送）。
 
-  // 聚焦输入框 → 自动开始语音识别（"输入的地方=语音"）：点输入框即可说话，识别完自动填入发送。
-  function attachFocusListen(box) {
-    if (!box || box.__dsFocusListen) return;
-    box.__dsFocusListen = true;
-    box.addEventListener('focus', function () {
-      if (voiceFocusLock) return;                       // 识别/发送期间不重复触发
-      if (!inOn) return;                                // "输入"开关关闭时不自动听
-      if (wakeOn) return;                               // 免手模式不重复监听
-      if (typeof VoiceBridge === 'undefined') return;
-      voiceFocusLock = true;
-      mic.classList.add('on');
-      status.textContent = '请说话，识别完自动发送';
-      VoiceBridge.startRecognition();
-      // 聚焦后 10 秒内没识别出内容则复位锁（避免卡死）
-      setTimeout(function () { if (mic.classList.contains('on')) { mic.classList.remove('on'); } voiceFocusLock = false; }, 12000);
-    });
-  }
-  function attachFocusToCurrent() {
-    try { var b = findInputBox(); if (b) attachFocusListen(b); } catch (e) { }
-  }
-  setInterval(attachFocusToCurrent, 1000);
-
-  // 向输入框注入文本（多级 fallback：execCommand → 原生 setter → 直接赋值），返回是否成功。
-  // 注入期间置 __dsAutoInject=true，放行禁手动拦截器；结束后复位。
+  // 向输入框注入文本（多级 fallback：execCommand → 原生 setter → 直接赋值），返回是否成功
   function setBoxText(box, text) {
     if (!box) return false;
-    box.__dsAutoInject = true;
     try {
       if (box.tagName === 'TEXTAREA' || box.tagName === 'INPUT') {
         try {
@@ -490,7 +401,6 @@
       }
       return ok;
     } catch (e) { return false; }
-    finally { box.__dsAutoInject = false; }
   }
 
   function fillInput(text, silent) {
@@ -506,32 +416,7 @@
     return ok;
   }
 
-  // 查找发送按钮（多级候选，DeepSeek 页面结构可能变化）
-  function findSendBtn() {
-    var sels = [
-      'button[aria-label*="发送"]',
-      'button[class*="send"]',
-      '[class*="send"] button',
-      'button[type="submit"]',
-      'button[data-testid*="send"]',
-      '[class*="chat"] button[class*="icon"]'
-    ];
-    for (var i = 0; i < sels.length; i++) {
-      try {
-        var els = document.querySelectorAll(sels[i]);
-        for (var j = 0; j < els.length; j++) {
-          var b = els[j];
-          try {
-            var r = b.getBoundingClientRect();
-            if (r.width > 4 && r.height > 4) return b;
-          } catch (e) { return b; }
-        }
-      } catch (e) { }
-    }
-    return null;
-  }
-
-  // 模拟回车发送（优先），不行再找发送按钮点击（多级兜底）
+  // 模拟回车发送（优先），不行再找发送按钮点击
   function sendMsg() {
     var box = findInputBox();
     if (box) {
@@ -541,30 +426,23 @@
         var ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
         box.dispatchEvent(ev);
         setTimeout(function () {
-          // 兜底1：Enter 后若输入框仍有内容未发出，改点发送按钮
+          // 兜底：Enter 后若输入框仍有内容未发出，改点发送按钮
           try {
             var still = findInputBox();
             var cur = still && (still.value || still.innerText || '').trim();
             if (cur) {
-              var btn = findSendBtn();
-              if (btn) { btn.click(); return; }
+              var btn = document.querySelector('button[class*="send"], [class*="send"] button, button[aria-label*="发送"], button[type="submit"]');
+              if (btn) btn.click();
             }
           } catch (e2) { }
-          // 兜底2：再次聚焦 + 回车（部分编辑器需真实聚焦后才响应）
-          try {
-            var b2 = findInputBox();
-            var cur2 = b2 && (b2.value || b2.innerText || '').trim();
-            if (cur2) {
-              b2.focus();
-              b2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-            }
-          } catch (e3) { }
         }, 500);
         return;
       } catch (e) { }
     }
-    var btn = findSendBtn();
-    if (btn) btn.click();
+    try {
+      var btn = document.querySelector('button[class*="send"], [class*="send"] button, button[aria-label*="发送"]');
+      if (btn) btn.click();
+    } catch (e) { }
   }
 
   // 播报模式截断：完整=全文 / 简短=前150字 / 结论=前60字（尽量在句末截断）

@@ -1,0 +1,8 @@
+PySide6
+sounddevice
+edge-tts
+numpy
+pygame
+# 离线中文语音识别（纯 C，无 torch，体积小）
+vosk
+# 模型首次运行自动从 alphacephei.com 下载 vosk-model-small-cn-0.22（约 44MB）
