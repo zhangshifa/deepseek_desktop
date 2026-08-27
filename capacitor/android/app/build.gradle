@@ -26,8 +26,8 @@ android {
         applicationId 'com.example.deepseekvoice'
         minSdk 24
         targetSdk 34
-        versionCode 24
-        versionName '1.1.11'
+        versionCode 25
+        versionName '1.1.12'
     }
 
     compileOptions {
