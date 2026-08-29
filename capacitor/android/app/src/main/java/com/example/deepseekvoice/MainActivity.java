@@ -82,6 +82,8 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                // 防"语音不可用"：部分 ROM/跨域导航后 JS 桥对象丢失，重新挂载
+                reattachBridge();
                 injectOverlay(view);
             }
         });
@@ -167,6 +169,18 @@ public class MainActivity extends AppCompatActivity {
             view.evaluateJavascript(js, null);
         } catch (Exception ignored) {
             // 资源缺失时静默失败，不影响网页本身使用
+        }
+    }
+
+    /** 重新挂载 JS 桥：addJavascriptInterface 跨域导航/部分 ROM 可能失效，重挂一次保证可用。 */
+    private void reattachBridge() {
+        try {
+            if (voiceBridge == null) {
+                voiceBridge = new VoiceBridge(this, new BluetoothAudio(this));
+            }
+            webView.removeJavascriptInterface("VoiceBridge");
+            webView.addJavascriptInterface(voiceBridge, "VoiceBridge");
+        } catch (Exception ignored) {
         }
     }
 
