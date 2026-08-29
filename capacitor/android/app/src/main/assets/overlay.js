@@ -28,6 +28,8 @@
     '@keyframes dsPulse{0%{opacity:1}50%{opacity:.55}100%{opacity:1}}' +
     '#dsWake{background:linear-gradient(145deg,#6b7280,#4b5563);box-shadow:0 2px 6px rgba(75,85,99,.35);}' +
     '#dsWake.on{background:linear-gradient(145deg,#10b981,#059669);box-shadow:0 2px 8px rgba(16,185,129,.5);animation:none;}' +
+    '#dsCall{width:auto;min-width:52px;padding:0 10px;font-size:18px;background:linear-gradient(145deg,#10b981,#059669);box-shadow:0 2px 8px rgba(16,185,129,.45);}' +
+    '#dsCall.on{background:linear-gradient(145deg,#ef4444,#dc2626);box-shadow:0 2px 8px rgba(239,68,68,.5);animation:dsPulse 1.2s infinite;}' +
     '#dsBt{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;' +
     'border-radius:10px;font-size:15px;opacity:.38;cursor:default;background:rgba(255,255,255,.06);' +
     'transition:opacity .3s,filter .3s,box-shadow .3s;}' +
@@ -77,6 +79,7 @@
   var bar = document.createElement('div');
   bar.id = 'dsBar';
   bar.innerHTML =
+    '<button id="dsCall" title="电话模式：接通后直接说话，说话即转文字自动发送，回复自动播报（像打电话）">📞</button>' +
     '<button id="dsMic" title="语音输入：点一下说话，识别完自动发送；麦克风不可用/无权限时可在输入框手动输入">🎤</button>' +
     '<button id="dsWake" title="免手模式：说唤醒词才输入，回复自动播报">🛎</button>' +
     '<button id="dsImg" title="眼镜图片：用最新照片（智能眼镜优先）作为输入">📷</button>' +
@@ -127,6 +130,7 @@
   var imgBtn = document.getElementById('dsImg');
   var menuBtn = document.getElementById('dsMenu');
   var btIcon = document.getElementById('dsBt');
+  var callBtn = document.getElementById('dsCall');
   var inChk = document.getElementById('dsInChk');
   var outChk = document.getElementById('dsOutChk');
   var modeSel = document.getElementById('dsMode');
@@ -136,6 +140,7 @@
   var status = document.getElementById('dsStatus');
   var inOn = true, outOn = true, mode = 'brief', guardOn = false, tailOn = false;
   var wakeOn = false;
+  var callOn = false;
   var wakeWord = '小深';
 
   // 双 tab 切换：设置 / 关于
@@ -231,6 +236,32 @@
     }
   };
 
+  // 电话模式：接通后说话即输入（无需唤醒词、无需按键），回复自动播报，说完继续听
+  callBtn.onclick = function () {
+    if (typeof VoiceBridge === 'undefined') { status.textContent = '语音不可用，请在输入框手动输入'; return; }
+    if (!callOn) {
+      // 接通：关闭手动 mic 与免手模式，避免两套监听打架
+      if (wakeOn) { VoiceBridge.stopWake(); wakeOn = false; wakeBtn.classList.remove('on'); }
+      mic.classList.remove('on');
+      VoiceBridge.stopRecognition();
+      VoiceBridge.startCall();
+      callOn = true;
+      callBtn.classList.add('on');
+      callBtn.textContent = '📵';
+      mic.disabled = true;
+      wakeBtn.disabled = true;
+      status.textContent = '已接通：直接说话，识别完自动发送；回复自动播报';
+    } else {
+      VoiceBridge.stopCall();
+      callOn = false;
+      callBtn.classList.remove('on');
+      callBtn.textContent = '📞';
+      mic.disabled = false;
+      wakeBtn.disabled = false;
+      status.textContent = '已挂断';
+    }
+  };
+
   // 智能眼镜图片输入：触发网页图片上传，原生返回相册最新照片（眼镜相册优先）
   imgBtn.onclick = function () {
     try {
@@ -297,10 +328,10 @@
     }
     else if (obj.type === 'error') { mic.classList.remove('on'); status.textContent = '语音不可用，可在输入框手动输入'; }
     else if (obj.type === 'wake') {
-      if (!obj.text) { status.textContent = '唤醒成功，请说内容'; return; }
+      if (!obj.text) { status.textContent = callOn ? '请说话…' : '唤醒成功，请说内容'; return; }
       var wt = tailOn ? (stripKwEnd(obj.text) || obj.text) : obj.text;
       if (inOn) {
-        status.textContent = '已唤醒，发送…';
+        status.textContent = callOn ? '已发送：' + wt : '已唤醒，发送…';
         fillInput(wt, false);
         sendMsg();
       } else {
@@ -308,8 +339,15 @@
       }
     }
     else if (obj.type === 'done') {
-      // 播报完毕：按"输入"开关决定是否恢复免手监听、继续接收语音并转文字
-      if (wakeOn) {
+      // 播报完毕：电话模式恢复监听继续听；免手模式恢复唤醒待命
+      if (callOn) {
+        if (inOn) {
+          try { VoiceBridge.resumeCall(); } catch (e) { }
+          status.textContent = '继续聆听：请说话';
+        } else {
+          status.textContent = '播报完毕（输入已关闭，暂停接收语音）';
+        }
+      } else if (wakeOn) {
         if (inOn) {
           try { VoiceBridge.resumeWake(); } catch (e) { }
           status.textContent = '免手待命：说「' + wakeWord + '」';
@@ -475,6 +513,7 @@
       lastText = txt;
       if (typeof VoiceBridge !== 'undefined') {
         if (wakeOn) { try { VoiceBridge.pauseWake(); } catch (e) { } }   // 播报期间暂停免手监听
+        if (callOn) { try { VoiceBridge.pauseCall(); } catch (e) { } }   // 播报期间暂停电话监听
         VoiceBridge.playTone('out');                                     // 输出提示音（思考完成）
         setTimeout(function () { VoiceBridge.speak(trimReply(txt)); }, 450);
         lastSpoken = txt;
@@ -487,4 +526,24 @@
     timer = setTimeout(pickReply, 1200);
   });
   obs.observe(document.body, { childList: true, subtree: true });
+
+  // 自动接通电话模式（像打电话：打开即可直接说话输入，无需按键/唤醒词）。
+  // 等页面稳定后尝试；语音不可用或用户手动挂断后不再自动重连。
+  var autoTried = false;
+  function tryAutoCall() {
+    if (autoTried) return;
+    autoTried = true;
+    try {
+      if (typeof VoiceBridge !== 'undefined' && VoiceBridge.startCall && inOn) {
+        VoiceBridge.startCall();
+        callOn = true;
+        callBtn.classList.add('on');
+        callBtn.textContent = '📵';
+        mic.disabled = true;
+        wakeBtn.disabled = true;
+        status.textContent = '已接通：直接说话，识别完自动发送；回复自动播报';
+      }
+    } catch (e) { }
+  }
+  setTimeout(tryAutoCall, 2500);
 })();
