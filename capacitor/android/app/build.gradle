@@ -11,8 +11,9 @@ android {
     namespace 'com.example.deepseekvoice'
     compileSdk 34
 
-    // 固定签名 keystore（仓库内 app/keys/debug.keystore）：
-    // CI 每次云编译共用同一签名，保证覆盖安装/OTA 升级不报"签名不一致"。
+    // 固定签名 keystore（仓库内 app/keys/）：
+    // debug=调试证书（本地测试）；release=正式自签名证书（发布包，避免"风险App/调试应用"提示）。
+    // CI 与本地共用同一签名，保证覆盖安装/OTA 升级不报"签名不一致"。
     signingConfigs {
         debug {
             storeFile file('keys/debug.keystore')
@@ -20,14 +21,21 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            storeFile file('keys/release.keystore')
+            storeType 'pkcs12'
+            storePassword 'deepseek2026'
+            keyAlias 'deepseekvoice'
+            keyPassword 'deepseek2026'
+        }
     }
 
     defaultConfig {
         applicationId 'com.example.deepseekvoice'
         minSdk 24
         targetSdk 34
-        versionCode 25
-        versionName '1.1.12'
+        versionCode 26
+        versionName '1.1.13'
     }
 
     compileOptions {
@@ -42,9 +50,10 @@ android {
 
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug   // 固定签名，CI 与本地一致
+            signingConfig signingConfigs.debug   // 调试证书，本地测试用
         }
         release {
+            signingConfig signingConfigs.release // 正式证书，发布用
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
