@@ -40,6 +40,12 @@ public class VoiceBridge {
     private static final long WAKE_INTERVAL_ERROR = 3000; // 无语音/识别错误：安静期
     private static final long WAKE_INTERVAL_BUSY = 1500;  // 识别器忙：稍等重试
 
+    // 电话模式监听间隔（毫秒）——像打电话：无需唤醒词，说话即输入；说完继续听
+    private static final long CALL_INTERVAL_HIT = 900;    // 识别到内容后：快速续听下一句
+    private static final long CALL_INTERVAL_IDLE = 3000;  // 无语音：安静期后继续听
+    private static final long CALL_INTERVAL_ERROR = 3000; // 识别错误：安静期后继续听
+    private static final long CALL_INTERVAL_BUSY = 1500;  // 识别器忙：稍等重试
+
     private final MainActivity activity;
     private final BluetoothAudio bluetoothAudio;
     private SpeechRecognizer recognizer;
@@ -51,6 +57,10 @@ public class VoiceBridge {
     private volatile boolean wakeActive = false;
     private volatile boolean wakePaused = false;   // 播报期间暂停监听，防止采集到播报声
     private String wakeKeyword = "小深";
+
+    // 电话模式（免唤醒直通：说话即输入，说完自动发，回复播报后继续听）
+    private volatile boolean callActive = false;
+    private volatile boolean callPaused = false;   // 播报期间暂停监听
 
     public VoiceBridge(MainActivity activity, BluetoothAudio bluetoothAudio) {
         this.activity = activity;
@@ -90,8 +100,8 @@ public class VoiceBridge {
             recognizer = SpeechRecognizer.createSpeechRecognizer(activity);
             recognizer.setRecognitionListener(new RecognitionListener() {
                 public void onReadyForSpeech(android.os.Bundle params) {
-                    // 免手模式待命中不发 start（避免误点亮 mic 按钮）
-                    if (!wakeActive) emit("start", "");
+                    // 免手/电话模式待命中不发 start（避免误点亮 mic 按钮）
+                    if (!wakeActive && !callActive) emit("start", "");
                 }
 
                 public void onBeginningOfSpeech() { }
@@ -102,7 +112,14 @@ public class VoiceBridge {
                 public void onError(int error) {
                     listening = false;
                     endSco();
-                    if (wakeActive) {
+                    if (callActive) {
+                        // 电话模式：无语音/超时/其他错误 → 安静期后继续监听
+                        if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                            handler.postDelayed(VoiceBridge.this::callListenOnce, CALL_INTERVAL_BUSY);
+                        } else {
+                            handler.postDelayed(VoiceBridge.this::callListenOnce, CALL_INTERVAL_ERROR);
+                        }
+                    } else if (wakeActive) {
                         // 免手模式：无语音/超时/其他错误 → 安静期后继续待命（减少采集）
                         if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
                             handler.postDelayed(VoiceBridge.this::wakeListenOnce, WAKE_INTERVAL_BUSY);
@@ -119,7 +136,9 @@ public class VoiceBridge {
                     ArrayList<String> matches =
                             results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     String text = (matches != null && !matches.isEmpty()) ? matches.get(0) : "";
-                    if (wakeActive) {
+                    if (callActive) {
+                        handleCallResult(text);
+                    } else if (wakeActive) {
                         handleWakeResult(text);
                     } else {
                         // 识别完成：final 供网页"说完即发"（partial 已做流式预览）
@@ -129,8 +148,8 @@ public class VoiceBridge {
                 }
 
                 public void onPartialResults(android.os.Bundle results) {
-                    // 免手模式不逐字回传；手动模式才实时填充
-                    if (wakeActive) return;
+                    // 免手/电话模式不逐字回传；手动模式才实时填充
+                    if (wakeActive || callActive) return;
                     ArrayList<String> matches =
                             results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty()) {
@@ -199,6 +218,74 @@ public class VoiceBridge {
         if (wakeActive) {
             handler.post(this::wakeListenOnce);
         }
+    }
+
+    // ---------- 电话模式（免唤醒直通：像打电话一样） ----------
+
+    /** 接通电话模式：无需唤醒词，说话即转文字输入；说完自动发送，回复播报后继续听。 */
+    @JavascriptInterface
+    public void startCall() {
+        if (recognizer == null || callActive) return;
+        callActive = true;
+        callPaused = false;
+        handler.post(this::callListenOnce);
+    }
+
+    /** 挂断电话模式：停止监听。 */
+    @JavascriptInterface
+    public void stopCall() {
+        callActive = false;
+        callPaused = false;
+        stopRecognition();
+    }
+
+    /** 暂停电话监听（播报期间调用，避免播报声被采集）。 */
+    @JavascriptInterface
+    public void pauseCall() {
+        callPaused = true;
+        stopRecognition();
+    }
+
+    /** 恢复电话监听（播报完毕、输入开关开启时调用，继续接收语音转文字）。 */
+    @JavascriptInterface
+    public void resumeCall() {
+        callPaused = false;
+        if (callActive) {
+            handler.post(this::callListenOnce);
+        }
+    }
+
+    /** 电话模式监听一轮（识别完成后按节流策略续接下一轮）。 */
+    private void callListenOnce() {
+        if (!callActive || recognizer == null || listening || callPaused) return;
+        listening = true;
+        enableScoIfBt();
+        try {
+            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN");
+            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 400);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900);
+            recognizer.startListening(intent);
+        } catch (Exception e) {
+            listening = false;
+            handler.postDelayed(this::callListenOnce, CALL_INTERVAL_IDLE);
+        }
+    }
+
+    /** 电话模式识别结果：非空即作为输入交给网页（不要求唤醒词），说完快速续听。 */
+    private void handleCallResult(String text) {
+        endSco();
+        if (!callActive) return;
+        if (text == null || text.isEmpty()) {
+            // 空结果（只有环境音）：安静期后继续听，不当作输入
+            handler.postDelayed(this::callListenOnce, CALL_INTERVAL_IDLE);
+            return;
+        }
+        playTone("in");
+        emit("wake", text);   // 复用 wake 事件：网页收到后自动填入输入框并发送
+        handler.postDelayed(this::callListenOnce, CALL_INTERVAL_HIT);
     }
 
     /** 免手模式待命监听一轮（识别完成后按节流策略续接下一轮）。 */
