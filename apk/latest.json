@@ -1,8 +1,8 @@
 {
-  "version_code": 25,
-  "version_name": "1.1.12",
-  "notes": "DeepSeekVoice 在线更新包 v1.1.12：语音输入（说话转文字自动发送）+ 返回播报 + 蓝牙耳机",
-  "download_url": "https://api.github.com/repos/zhangshifa/deepseek_desktop/contents/apk/app-debug.apk?ref=main",
-  "apk": "apk/app-debug.apk",
-  "updated_at": "2026-08-28T00:02:00Z"
+  "version_code": 26,
+  "version_name": "1.1.13",
+  "notes": "DeepSeekVoice v1.1.13（正式签名）：语音输入→DeepSeek输入框自动发送；电话模式（像打电话，打开即接通、说话即输入、回复自动播报）；修复部分ROM“语音不可用”；消除“风险App”安装提示。旧版(调试签名)请先卸载再装。",
+  "download_url": "https://raw.githubusercontent.com/zhangshifa/deepseek_desktop/main/apk/DSV-1.1.13-release.apk",
+  "apk": "apk/DSV-1.1.13-release.apk",
+  "updated_at": "2026-08-30T02:33:00Z"
 }
