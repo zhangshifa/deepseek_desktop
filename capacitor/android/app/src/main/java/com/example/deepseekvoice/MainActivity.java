@@ -1,6 +1,7 @@
 package com.example.deepseekvoice;
 
 import android.Manifest;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -30,6 +31,8 @@ import java.io.InputStreamReader;
  */
 public class MainActivity extends AppCompatActivity {
 
+    private static final int REQ_MIC = 1;
+
     private WebView webView;
     private VoiceBridge voiceBridge;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -42,12 +45,8 @@ public class MainActivity extends AppCompatActivity {
 
         webView = findViewById(R.id.webview);
 
-        // 运行时申请麦克风权限
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.RECORD_AUDIO}, 1);
-        }
+        // 运行时申请麦克风权限（电话模式必需；未授权时识别器只会空转不出声）
+        ensureMicPermission();
         // Android 12+ 蓝牙连接权限（蓝牙耳机输入/输出）
         if (android.os.Build.VERSION.SDK_INT >= 31
                 && ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
@@ -161,6 +160,30 @@ public class MainActivity extends AppCompatActivity {
     /** 供 VoiceBridge 拿到 WebView 回传识别结果 */
     public WebView getWebView() {
         return webView;
+    }
+
+    /** 确保麦克风权限：未授予则弹系统授权框（VoiceBridge 接通电话模式前会调用）。 */
+    public void ensureMicPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_MIC) return;
+        boolean granted = grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        // 通知网页：授权结果 → 已授权则自动重新接通电话模式，被拒则显示原因
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "window.__onSpeech&&window.__onSpeech({type:'perm',text:'"
+                            + (granted ? "granted" : "denied") + "'});", null);
+        }
     }
 
     private void injectOverlay(WebView view) {
