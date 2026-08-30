@@ -16,6 +16,21 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
+    <!-- Android 11+（API30+）包可见性过滤：必须声明下列 intent，App 才能"看到"系统的
+         语音识别服务 / 语音合成服务。缺少本段时 SpeechRecognizer.isRecognitionAvailable()
+         恒返回 false，识别器创建不出来 → 电话模式虽提示已接通但麦克风根本不工作。 -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:label="DeepSeekVoice"
