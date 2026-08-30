@@ -12,9 +12,16 @@ import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
 
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+
 import androidx.core.content.FileProvider;
 
 import org.json.JSONObject;
+
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -36,6 +43,13 @@ public class Updater {
 
     private static final String TAG = "DeepSeekVoiceUpdater";
     private static final String REPO = "zhangshifa/deepseek_desktop";
+
+    /**
+     * 正式发布证书（release.keystore, alias=deepseekvoice）的 SHA-256 指纹。
+     * 用于检测已装版本是否为旧签名（如调试证书）：若不一致则无法无缝覆盖升级，需先卸载。
+     */
+    private static final String EXPECTED_RELEASE_CERT_SHA256 =
+            "4d758adcc0b83615dea930731fcf6698863269a92a81c42f01a3091b5b7d8664";
 
     /**
      * 仓库已设为公开 → 免令牌：TOKEN 留空，App 端走免令牌路径
@@ -104,6 +118,11 @@ public class Updater {
     }
 
     private void promptUpdate(String versionName, String notes) {
+        // 已装版本若是旧签名（如调试证书），与正式证书不一致，无法无缝覆盖升级 → 先引导卸载
+        if (!isInstalledWithExpectedSignature()) {
+            promptUninstallForSignatureMismatch();
+            return;
+        }
         new AlertDialog.Builder(context)
                 .setTitle("发现新版本 v" + versionName)
                 .setMessage("当前版本 v" + localVersionName + " → 新版本 v" + versionName
@@ -222,6 +241,58 @@ public class Updater {
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    /** 已装版本为旧签名（与正式证书不一致）时的友好引导：先卸载再装新版本。 */
+    private void promptUninstallForSignatureMismatch() {
+        new AlertDialog.Builder(context)
+                .setTitle("需要卸载旧版本")
+                .setMessage("检测到当前安装的是旧签名版本，无法无缝升级到新版本（签名不一致）。\n\n"
+                        + "请先卸载旧版 DeepSeekVoice，再安装新版本即可正常升级；之后所有 OTA 更新都将无缝进行，"
+                        + "且不再出现「风险App」提示。")
+                .setPositiveButton("去卸载", (d, w) -> openAppDetails())
+                .setNegativeButton("稍后再说", null)
+                .show();
+    }
+
+    /** 跳转本应用详情页（可在此卸载）。 */
+    private void openAppDetails() {
+        try {
+            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            i.setData(Uri.parse("package:" + context.getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(i);
+        } catch (Exception e) {
+            Log.e(TAG, "open app details failed", e);
+            toast("无法打开设置页，请手动到 设置→应用→DeepSeekVoice→卸载");
+        }
+    }
+
+    /** 当前已装应用是否使用预期的正式发布证书签名。 */
+    private boolean isInstalledWithExpectedSignature() {
+        try {
+            PackageManager pm = context.getPackageManager();
+            int flags = (Build.VERSION.SDK_INT >= 28)
+                    ? PackageManager.GET_SIGNING_CERTIFICATES
+                    : PackageManager.GET_SIGNATURES;
+            PackageInfo pi = pm.getPackageInfo(context.getPackageName(), flags);
+            Signature[] sigs = (Build.VERSION.SDK_INT >= 28 && pi.signingInfo != null)
+                    ? pi.signingInfo.getApkContentsSigners()
+                    : pi.signatures;
+            if (sigs == null) return false;
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            for (Signature s : sigs) {
+                byte[] dig = md.digest(s.toByteArray());
+                StringBuilder sb = new StringBuilder();
+                for (byte b : dig) sb.append(String.format("%02x", b));
+                if (sb.toString().equalsIgnoreCase(EXPECTED_RELEASE_CERT_SHA256)) return true;
+            }
+            return false;
+        } catch (Exception e) {
+            Log.e(TAG, "check installed signature failed", e);
+            // 检测失败时不阻断升级流程，交由系统安装器处理
+            return true;
+        }
     }
 
     private void toast(String msg) {
