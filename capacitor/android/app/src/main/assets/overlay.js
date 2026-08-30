@@ -70,7 +70,11 @@
     'background:linear-gradient(145deg,#3b82f6,#2563eb);color:#fff;border:0;border-radius:9px;' +
     'padding:7px 14px;font-size:13px;cursor:pointer;}' +
     '#dsAbout .dsBtn:active{transform:scale(.95);}' +
-    '#dsAbout #dsAboutClose{background:#4b5563;margin-right:0;}';
+    '#dsAbout #dsAboutClose{background:#4b5563;margin-right:0;}' +
+    '#dsDiagOut{display:none;max-height:190px;overflow:auto;margin:8px 0 0;padding:8px;' +
+    'background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.1);border-radius:8px;' +
+    'color:#a7f3d0;font:11px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-all;}' +
+    '#dsDiagOut.show{display:block;}';
 
   var style = document.createElement('style');
   style.textContent = css;
@@ -113,10 +117,13 @@
     '<div class="dsCur">当前版本：<span class="dsVer" id="dsVer">--</span></div>' +
     '<div style="margin:10px 0 6px;">' +
     '<button class="dsBtn" id="dsAboutUpd">🔄 检查更新</button>' +
+    '<button class="dsBtn" id="dsDiag">🔎 语音诊断</button>' +
     '<button class="dsBtn" id="dsAboutClose">✕ 关闭</button>' +
     '</div>' +
+    '<pre id="dsDiagOut"></pre>' +
     '<div class="dsSec">功能</div>' +
     '<div class="dsFeat">' +
+    '<span>📞 电话模式：接通后直接说话，自动发送并播报</span>' +
     '<span>🎤 语音输入：说话即转文字（麦克风不可用时可手动输入）</span>' +
     '<span>🔊 语音播报：回复自动朗读</span>' +
     '<span>🛎 免手唤醒：说唤醒词才输入</span>' +
@@ -170,6 +177,43 @@
       status.textContent = '已触发在线检查，请留意提示';
     } catch (e) { status.textContent = '检查更新不可用'; }
   };
+
+  // 语音诊断：把原生侧真实状态摊开（权限/识别服务/识别器/最近错误），定位"提示已接通但没声音"
+  var diagOut = document.getElementById('dsDiagOut');
+  document.getElementById('dsDiag').onclick = function () {
+    var lines = [];
+    try {
+      if (typeof VoiceBridge === 'undefined') {
+        lines.push('❌ VoiceBridge 未注入（JS 桥丢失，重启 App）');
+      } else if (!VoiceBridge.getVoiceDiagnostics) {
+        lines.push('⚠️ 旧版原生桥，无诊断接口，请升级 App');
+      } else {
+        var d = JSON.parse(VoiceBridge.getVoiceDiagnostics());
+        lines.push((d.micPermission ? '✅' : '❌') + ' 麦克风权限：' + d.micPermission);
+        lines.push((d.recognizerReady ? '✅' : '❌') + ' 识别器已创建：' + d.recognizerReady);
+        lines.push('   系统报告可用：' + d.systemReportsAvailable);
+        lines.push('   使用服务：' + d.component + (d.onDevice ? '（离线）' : ''));
+        lines.push('   已安装识别服务：' + ((d.installedServices || []).join(', ') || '（无）'));
+        lines.push('   电话模式：' + d.callActive + '，正在录音：' + d.listening);
+        lines.push('   语音合成：' + d.ttsReady);
+        lines.push('   最近错误：' + (d.lastError || '无'));
+        if (!d.micPermission) lines.push('👉 请点下方按钮授权麦克风');
+        else if (!d.recognizerReady) lines.push('👉 本机缺少语音识别服务，需安装"Google 语音服务"或系统语音包');
+      }
+      var box = findInputBox();
+      lines.push((box ? '✅' : '❌') + ' 输入框定位：' + (box ? (box.tagName + (box.id ? '#' + box.id : '')) : '未找到'));
+    } catch (e) {
+      lines.push('诊断异常：' + e);
+    }
+    diagOut.textContent = lines.join('\n');
+    diagOut.classList.add('show');
+    try {
+      if (typeof VoiceBridge !== 'undefined' && VoiceBridge.hasMicPermission
+        && !VoiceBridge.hasMicPermission()) {
+        VoiceBridge.requestMicPermission();
+      }
+    } catch (e) { }
+  };
   document.addEventListener('click', function (e) {
     if (about.classList.contains('show') && !about.contains(e.target) && e.target !== menuBtn) {
       about.classList.remove('show');
@@ -207,11 +251,24 @@
   refreshBt();
   setInterval(refreshBt, 3000);
 
+  // 把原生返回的状态码翻译成人话（ok 以外都要让用户看见真实原因）
+  function explain(r) {
+    if (r === 'noperm') return '需要麦克风权限，请在弹窗中点「允许」';
+    if (r === 'norecog') return '本机无语音识别服务 → 点 ⋯ 看「语音诊断」';
+    if (r === 'busy') return '识别器忙，请稍后再试';
+    return '语音启动失败（' + (r || '未知') + '），可手动输入';
+  }
+
   mic.onclick = function () {
     refreshBt();
     if (typeof VoiceBridge === 'undefined') { status.textContent = '语音不可用，请在输入框手动输入'; return; }
     if (mic.classList.contains('on')) { VoiceBridge.stopRecognition(); mic.classList.remove('on'); }
-    else { VoiceBridge.startRecognition(); }
+    else {
+      var r;
+      try { r = VoiceBridge.startRecognition(); } catch (e) { r = 'exception'; }
+      r = (r === null || r === undefined) ? 'ok' : String(r);
+      if (r !== 'ok') { mic.classList.remove('on'); status.textContent = explain(r); }
+    }
   };
 
   // 免手模式开关：开启后禁用手动 mic，避免两套监听打架
@@ -222,7 +279,10 @@
       if (!kw || !kw.trim()) return;
       wakeWord = kw.trim();
       kwLbl.textContent = wakeWord;
-      VoiceBridge.startWake(wakeWord);
+      var rw;
+      try { rw = VoiceBridge.startWake(wakeWord); } catch (e) { rw = 'exception'; }
+      rw = (rw === null || rw === undefined) ? 'ok' : String(rw);
+      if (rw !== 'ok') { status.textContent = explain(rw); return; }
       wakeOn = true;
       wakeBtn.classList.add('on');
       mic.disabled = true;
@@ -236,30 +296,65 @@
     }
   };
 
-  // 电话模式：接通后说话即输入（无需唤醒词、无需按键），回复自动播报，说完继续听
-  callBtn.onclick = function () {
-    if (typeof VoiceBridge === 'undefined') { status.textContent = '语音不可用，请在输入框手动输入'; return; }
-    if (!callOn) {
-      // 接通：关闭手动 mic 与免手模式，避免两套监听打架
-      if (wakeOn) { VoiceBridge.stopWake(); wakeOn = false; wakeBtn.classList.remove('on'); }
-      mic.classList.remove('on');
-      VoiceBridge.stopRecognition();
-      VoiceBridge.startCall();
-      callOn = true;
-      callBtn.classList.add('on');
-      callBtn.textContent = '📵';
-      mic.disabled = true;
-      wakeBtn.disabled = true;
-      status.textContent = '已接通：直接说话，识别完自动发送；回复自动播报';
-    } else {
-      VoiceBridge.stopCall();
-      callOn = false;
-      callBtn.classList.remove('on');
-      callBtn.textContent = '📞';
-      mic.disabled = false;
-      wakeBtn.disabled = false;
-      status.textContent = '已挂断';
+  // 电话模式：接通后说话即输入（无需唤醒词、无需按键），回复自动播报，说完继续听。
+  // 关键：以原生 startCall() 的**真实返回状态**决定 UI，绝不"假装已接通"。
+  function callUiOn() {
+    callOn = true;
+    callBtn.classList.add('on');
+    callBtn.textContent = '📵';
+    mic.disabled = true;
+    wakeBtn.disabled = true;
+  }
+
+  function callUiOff() {
+    callOn = false;
+    callBtn.classList.remove('on');
+    callBtn.textContent = '📞';
+    mic.disabled = false;
+    wakeBtn.disabled = false;
+  }
+
+  function connectCall() {
+    if (typeof VoiceBridge === 'undefined' || !VoiceBridge.startCall) {
+      status.textContent = '语音桥未就绪，请重启 App（可手动输入）';
+      callUiOff();
+      return false;
     }
+    // 关闭手动 mic 与免手模式，避免两套监听打架
+    if (wakeOn) { try { VoiceBridge.stopWake(); } catch (e) { } wakeOn = false; wakeBtn.classList.remove('on'); }
+    mic.classList.remove('on');
+    try { VoiceBridge.stopRecognition(); } catch (e) { }
+
+    var r;
+    try { r = VoiceBridge.startCall(); } catch (e) { r = 'exception'; }
+    r = (r === null || r === undefined) ? '' : String(r);
+
+    if (r === 'ok') {
+      callUiOn();
+      status.textContent = '已接通：直接说话（说完自动发送）';
+      return true;
+    }
+    // 失败：如实告知原因，别让用户对着不工作的麦克风说话
+    callUiOff();
+    if (r === 'noperm') {
+      status.textContent = '需要麦克风权限，请在弹窗中点「允许」';
+    } else if (r === 'norecog') {
+      status.textContent = '本机无语音识别服务 → 点 ⋯ 看「语音诊断」';
+    } else {
+      status.textContent = '接通失败（' + (r || '未知') + '），可手动输入';
+    }
+    return false;
+  }
+
+  function hangUpCall() {
+    try { VoiceBridge.stopCall(); } catch (e) { }
+    callUiOff();
+    status.textContent = '已挂断';
+  }
+
+  callBtn.onclick = function () {
+    if (!callOn) connectCall();
+    else hangUpCall();
   };
 
   // 智能眼镜图片输入：触发网页图片上传，原生返回相册最新照片（眼镜相册优先）
@@ -326,7 +421,32 @@
         status.textContent = '已识别（输入已关闭，未发送）';
       }
     }
-    else if (obj.type === 'error') { mic.classList.remove('on'); status.textContent = '语音不可用，可在输入框手动输入'; }
+    else if (obj.type === 'error') {
+      mic.classList.remove('on');
+      status.textContent = obj.text ? ('语音出错：' + obj.text) : '语音不可用，可在输入框手动输入';
+    }
+    // 电话模式：原生真正开始录音（区别于"以为接通了"）
+    else if (obj.type === 'callready') {
+      if (callOn) { callUiOn(); status.textContent = '聆听中…请说话'; }
+    }
+    // 电话模式真实故障上报：权限被拒 / 识别服务异常
+    else if (obj.type === 'callerr') {
+      status.textContent = obj.text || '语音识别异常';
+      if (obj.text && (obj.text.indexOf('权限') >= 0 || obj.text.indexOf('不可用') >= 0)) {
+        callUiOff();   // 已被原生挂断，UI 同步复位，避免显示"已接通"误导
+      }
+    }
+    // 麦克风授权结果：授权成功 → 自动重新接通电话模式
+    else if (obj.type === 'perm') {
+      if (obj.text === 'granted') {
+        status.textContent = '麦克风已授权，正在接通…';
+        autoTried = false;
+        setTimeout(function () { connectCall(); }, 300);
+      } else {
+        callUiOff();
+        status.textContent = '麦克风权限被拒绝，电话模式不可用（可手动输入）';
+      }
+    }
     else if (obj.type === 'wake') {
       if (!obj.text) { status.textContent = callOn ? '请说话…' : '唤醒成功，请说内容'; return; }
       var wt = tailOn ? (stripKwEnd(obj.text) || obj.text) : obj.text;
@@ -381,19 +501,42 @@
     return null;
   }
 
-  // 查找当前可用的聊天输入框：优先可见元素；主文档找不到则穿透 iframe（DeepSeek 页面结构可能变化）
+  // 从候选里挑"最像聊天输入框"的那个：可见 + 可编辑 + 面积大 + 越靠页面下方越优先
+  function pickBest(list) {
+    var best = null, bestScore = -1;
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      try {
+        if (el.disabled || el.readOnly) continue;
+        if (el.closest && el.closest('#dsBar, #dsAbout')) continue;   // 排除本工具条自身
+        var r = el.getBoundingClientRect();
+        if (r.width < 40 || r.height < 14) continue;
+        var cs = window.getComputedStyle(el);
+        if (cs.visibility === 'hidden' || cs.display === 'none' || parseFloat(cs.opacity) === 0) continue;
+        // 评分：面积为主，位置越靠下加权（聊天输入框固定在底部）
+        var score = r.width * r.height + r.top * 3;
+        if (score > bestScore) { bestScore = score; best = el; }
+      } catch (e) { }
+    }
+    return best;
+  }
+
+  // 查找当前可用的聊天输入框：先精确命中 DeepSeek 输入框 id，再按类型分级挑选；
+  // 主文档找不到则穿透 iframe（页面结构可能变化）
   function findInputBox() {
-    var sel = '[contenteditable="true"], [role="textbox"], textarea, div[contenteditable], input[type="text"]';
-    function scan(doc) {
-      var els = doc.querySelectorAll(sel);
-      for (var i = 0; i < els.length; i++) {
-        var el = els[i];
-        try {
-          var r = el.getBoundingClientRect();
-          if (r.width > 4 && r.height > 4) return el;   // 只取可见可编辑元素
-        } catch (e) { return els[i]; }
+    try {
+      var direct = document.querySelector('#chat-input, textarea#chat-input, textarea[id*="chat"]');
+      if (direct) {
+        var dr = direct.getBoundingClientRect();
+        if (dr.width > 20 && dr.height > 10) return direct;
       }
-      return null;
+    } catch (e) { }
+    function scan(doc) {
+      var ta = pickBest(doc.querySelectorAll('textarea'));
+      if (ta) return ta;
+      var ce = pickBest(doc.querySelectorAll('[contenteditable="true"], div[contenteditable], [role="textbox"]'));
+      if (ce) return ce;
+      return pickBest(doc.querySelectorAll('input[type="text"], input[type="search"]'));
     }
     var box = scan(document);
     if (box) return box;
@@ -454,33 +597,73 @@
     return ok;
   }
 
-  // 模拟回车发送（优先），不行再找发送按钮点击
+  // 完整回车键序列（keydown/keypress/keyup）：部分编辑器只认其中某一个
+  function fireEnter(box) {
+    var opts = {
+      key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+      bubbles: true, cancelable: true
+    };
+    try { box.dispatchEvent(new KeyboardEvent('keydown', opts)); } catch (e) { }
+    try { box.dispatchEvent(new KeyboardEvent('keypress', opts)); } catch (e) { }
+    try { box.dispatchEvent(new KeyboardEvent('keyup', opts)); } catch (e) { }
+  }
+
+  // 找发送按钮：DeepSeek 用 div[role=button]，故不能只找 <button>
+  function clickSend(box) {
+    var sels = [
+      'button[aria-label*="发送"]', 'div[role="button"][aria-label*="发送"]',
+      '[data-testid*="send"]', 'button[class*="send"]', 'div[class*="send"]',
+      '[class*="send"] button', 'button[type="submit"]'
+    ];
+    var boxRect = null;
+    try { boxRect = box && box.getBoundingClientRect(); } catch (e) { }
+    for (var i = 0; i < sels.length; i++) {
+      var els;
+      try { els = document.querySelectorAll(sels[i]); } catch (e) { continue; }
+      for (var j = 0; j < els.length; j++) {
+        var el = els[j];
+        try {
+          if (el.closest && el.closest('#dsBar, #dsAbout')) continue;
+          if (el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+          var r = el.getBoundingClientRect();
+          if (r.width < 8 || r.height < 8) continue;
+          // 发送按钮通常和输入框在同一水平带内
+          if (boxRect && r.top < boxRect.top - 120) continue;
+          el.click();
+          return true;
+        } catch (e) { }
+      }
+    }
+    return false;
+  }
+
+  // 发送：Enter 优先 → 仍未发出则点发送按钮 → 再失败则明确提示（不静默失败）
   function sendMsg() {
     var box = findInputBox();
-    if (box) {
-      try {
-        box.focus();
-        // 富文本编辑器走 Enter 键发送（ProseMirror 会拦截处理）
-        var ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
-        box.dispatchEvent(ev);
-        setTimeout(function () {
-          // 兜底：Enter 后若输入框仍有内容未发出，改点发送按钮
-          try {
-            var still = findInputBox();
-            var cur = still && (still.value || still.innerText || '').trim();
-            if (cur) {
-              var btn = document.querySelector('button[class*="send"], [class*="send"] button, button[aria-label*="发送"], button[type="submit"]');
-              if (btn) btn.click();
-            }
-          } catch (e2) { }
-        }, 500);
-        return;
-      } catch (e) { }
+    if (!box) {
+      status.textContent = '未找到输入框（页面结构变化）';
+      return;
     }
-    try {
-      var btn = document.querySelector('button[class*="send"], [class*="send"] button, button[aria-label*="发送"]');
-      if (btn) btn.click();
-    } catch (e) { }
+    try { box.focus(); } catch (e) { }
+    fireEnter(box);
+    setTimeout(function () {
+      try {
+        var still = findInputBox();
+        var cur = still && (still.value || still.innerText || '').trim();
+        if (!cur) return;                       // 已发出
+        if (clickSend(still)) {
+          setTimeout(function () {
+            try {
+              var again = findInputBox();
+              var left = again && (again.value || again.innerText || '').trim();
+              if (left) status.textContent = '已填入但未能自动发送，请手动点发送';
+            } catch (e3) { }
+          }, 700);
+        } else {
+          status.textContent = '已填入但没找到发送按钮，请手动发送';
+        }
+      } catch (e2) { }
+    }, 450);
   }
 
   // 播报模式截断：完整=全文 / 简短=前150字 / 结论=前60字（尽量在句末截断）
@@ -531,19 +714,18 @@
   // 等页面稳定后尝试；语音不可用或用户手动挂断后不再自动重连。
   var autoTried = false;
   function tryAutoCall() {
-    if (autoTried) return;
+    if (autoTried || callOn || !inOn) return false;
+    // 桥可能还没挂上（跨域导航/ROM 延迟）→ 本轮不算尝试，等下一轮
+    if (typeof VoiceBridge === 'undefined' || !VoiceBridge.startCall) return false;
     autoTried = true;
-    try {
-      if (typeof VoiceBridge !== 'undefined' && VoiceBridge.startCall && inOn) {
-        VoiceBridge.startCall();
-        callOn = true;
-        callBtn.classList.add('on');
-        callBtn.textContent = '📵';
-        mic.disabled = true;
-        wakeBtn.disabled = true;
-        status.textContent = '已接通：直接说话，识别完自动发送；回复自动播报';
-      }
-    } catch (e) { }
+    connectCall();
+    return true;
   }
-  setTimeout(tryAutoCall, 2500);
+  // 页面与 JS 桥就绪时机不确定：轮询尝试接通，成功/明确失败即停，20 秒后放弃
+  var autoTimer = setInterval(function () {
+    if (autoTried || callOn) { clearInterval(autoTimer); return; }
+    tryAutoCall();
+  }, 1200);
+  setTimeout(function () { clearInterval(autoTimer); }, 20000);
+  setTimeout(tryAutoCall, 2000);
 })();
