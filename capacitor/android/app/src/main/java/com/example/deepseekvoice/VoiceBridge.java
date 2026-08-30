@@ -1,19 +1,26 @@
 package com.example.deepseekvoice;
 
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.speech.RecognitionListener;
+import android.speech.RecognitionService;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -61,6 +68,12 @@ public class VoiceBridge {
     // 电话模式（免唤醒直通：说话即输入，说完自动发，回复播报后继续听）
     private volatile boolean callActive = false;
     private volatile boolean callPaused = false;   // 播报期间暂停监听
+    private int callErrStreak = 0;                 // 连续识别错误次数（用于向网页上报"真的坏了"）
+
+    // 诊断信息（网页「关于→语音诊断」可查看，定位"提示已接通但没声音"这类问题）
+    private ComponentName recognizerComponent;     // 实际使用的识别服务组件
+    private boolean onDeviceRecognizer = false;    // 是否用的设备端离线识别
+    private String lastError = "";                 // 最近一次失败原因
 
     public VoiceBridge(MainActivity activity, BluetoothAudio bluetoothAudio) {
         this.activity = activity;
@@ -95,13 +108,96 @@ public class VoiceBridge {
             }
         });
 
-        // 语音识别
-        if (SpeechRecognizer.isRecognitionAvailable(activity)) {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(activity);
-            recognizer.setRecognitionListener(new RecognitionListener() {
+        // 语音识别：懒创建（构造时先试一次；失败也不放弃，授权/切换识别服务后可再试）
+        ensureRecognizer();
+    }
+
+    /**
+     * 确保识别器可用。覆盖三种常见"语音不可用"场景：
+     *  1. 系统报告可用 → 创建默认识别器；
+     *  2. Android 11+ 包可见性 / ROM 未设默认识别服务 → 显式指定已安装的 RecognitionService；
+     *  3. 仍拿不到 → Android 13+ 尝试设备端离线识别。
+     */
+    private boolean ensureRecognizer() {
+        if (recognizer != null) return true;
+        try {
+            if (SpeechRecognizer.isRecognitionAvailable(activity)) {
+                recognizer = SpeechRecognizer.createSpeechRecognizer(activity);
+            }
+            if (recognizer == null) {
+                ComponentName cn = findRecognitionService();
+                if (cn != null) {
+                    recognizerComponent = cn;
+                    recognizer = SpeechRecognizer.createSpeechRecognizer(activity, cn);
+                }
+            }
+            if (recognizer == null && Build.VERSION.SDK_INT >= 33) {
+                try {
+                    if (SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
+                        recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(activity);
+                        onDeviceRecognizer = true;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            if (recognizer != null) {
+                recognizer.setRecognitionListener(buildListener());
+                lastError = "";
+                return true;
+            }
+            lastError = "本机未安装可用的语音识别服务";
+        } catch (Exception e) {
+            recognizer = null;
+            lastError = "识别器创建失败：" + e.getClass().getSimpleName();
+        }
+        return false;
+    }
+
+    /** 查询本机所有 RecognitionService 实现（优先 Google/系统），返回可直接使用的组件。 */
+    private ComponentName findRecognitionService() {
+        try {
+            PackageManager pm = activity.getPackageManager();
+            List<ResolveInfo> list =
+                    pm.queryIntentServices(new Intent(RecognitionService.SERVICE_INTERFACE), 0);
+            if (list == null || list.isEmpty()) return null;
+            ResolveInfo best = null;
+            for (ResolveInfo ri : list) {
+                if (ri.serviceInfo == null || ri.serviceInfo.packageName == null) continue;
+                if (ri.serviceInfo.packageName.contains("google")) {
+                    return new ComponentName(ri.serviceInfo.packageName, ri.serviceInfo.name);
+                }
+                if (best == null) best = ri;
+            }
+            if (best == null) return null;
+            return new ComponentName(best.serviceInfo.packageName, best.serviceInfo.name);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 本机可用识别服务列表（诊断用）。 */
+    private JSONArray listRecognitionServices() {
+        JSONArray arr = new JSONArray();
+        try {
+            PackageManager pm = activity.getPackageManager();
+            List<ResolveInfo> list =
+                    pm.queryIntentServices(new Intent(RecognitionService.SERVICE_INTERFACE), 0);
+            if (list != null) {
+                for (ResolveInfo ri : list) {
+                    if (ri.serviceInfo != null) arr.put(ri.serviceInfo.packageName);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return arr;
+    }
+
+    private RecognitionListener buildListener() {
+        return new RecognitionListener() {
                 public void onReadyForSpeech(android.os.Bundle params) {
                     // 免手/电话模式待命中不发 start（避免误点亮 mic 按钮）
-                    if (!wakeActive && !callActive) emit("start", "");
+                    if (callActive) emit("callready", "");
+                    else if (!wakeActive) emit("start", "");
                 }
 
                 public void onBeginningOfSpeech() { }
@@ -113,7 +209,27 @@ public class VoiceBridge {
                     listening = false;
                     endSco();
                     if (callActive) {
-                        // 电话模式：无语音/超时/其他错误 → 安静期后继续监听
+                        // 权限被拒：不要静默死循环，直接挂断并告诉网页真实原因
+                        if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                            callActive = false;
+                            lastError = "麦克风权限被拒绝";
+                            emit("callerr", "麦克风权限被拒绝，请在系统设置→应用权限里允许录音后重新接通");
+                            handler.post(activity::ensureMicPermission);
+                            return;
+                        }
+                        // 无语音/超时属正常空转；客户端/服务端/网络错误连续出现说明真的坏了 → 上报网页
+                        if (error == SpeechRecognizer.ERROR_NO_MATCH
+                                || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                            callErrStreak = 0;
+                        } else {
+                            callErrStreak++;
+                            lastError = errText(error);
+                            if (callErrStreak == 3 || callErrStreak % 10 == 0) {
+                                emit("callerr", "语音识别异常：" + errText(error)
+                                        + "（已重试 " + callErrStreak + " 次）");
+                            }
+                        }
+                        // 电话模式：安静期后继续监听
                         if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
                             handler.postDelayed(VoiceBridge.this::callListenOnce, CALL_INTERVAL_BUSY);
                         } else {
@@ -127,7 +243,8 @@ public class VoiceBridge {
                             handler.postDelayed(VoiceBridge.this::wakeListenOnce, WAKE_INTERVAL_ERROR);
                         }
                     } else {
-                        emit("error", String.valueOf(error));
+                        lastError = errText(error);
+                        emit("error", errText(error));
                     }
                 }
 
@@ -137,6 +254,7 @@ public class VoiceBridge {
                             results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     String text = (matches != null && !matches.isEmpty()) ? matches.get(0) : "";
                     if (callActive) {
+                        callErrStreak = 0;
                         handleCallResult(text);
                     } else if (wakeActive) {
                         handleWakeResult(text);
@@ -158,22 +276,99 @@ public class VoiceBridge {
                 }
 
                 public void onEvent(int event, android.os.Bundle params) { }
-            });
+        };
+    }
+
+    // ---------- 权限 / 诊断 ----------
+
+    /** 麦克风权限是否已授予（网页据此提示用户，而不是空转）。 */
+    @JavascriptInterface
+    public boolean hasMicPermission() {
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+                activity, android.Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** 主动拉起麦克风权限弹窗。 */
+    @JavascriptInterface
+    public void requestMicPermission() {
+        handler.post(activity::ensureMicPermission);
+    }
+
+    /** 语音链路诊断（网页「关于→语音诊断」显示），用于定位"提示已接通但没声音"。 */
+    @JavascriptInterface
+    public String getVoiceDiagnostics() {
+        try {
+            JSONObject o = new JSONObject();
+            o.put("micPermission", hasMicPermission());
+            o.put("systemReportsAvailable", SpeechRecognizer.isRecognitionAvailable(activity));
+            o.put("recognizerReady", recognizer != null);
+            o.put("component", recognizerComponent == null
+                    ? "(系统默认)" : recognizerComponent.flattenToShortString());
+            o.put("onDevice", onDeviceRecognizer);
+            o.put("installedServices", listRecognitionServices());
+            o.put("callActive", callActive);
+            o.put("listening", listening);
+            o.put("ttsReady", tts != null);
+            o.put("lastError", lastError == null ? "" : lastError);
+            return o.toString();
+        } catch (Exception e) {
+            return "{}";
         }
+    }
+
+    /** SpeechRecognizer 错误码 → 中文可读文案。 */
+    private static String errText(int error) {
+        switch (error) {
+            case SpeechRecognizer.ERROR_AUDIO: return "录音失败（麦克风被占用）";
+            case SpeechRecognizer.ERROR_CLIENT: return "识别客户端错误";
+            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "缺少麦克风权限";
+            case SpeechRecognizer.ERROR_NETWORK: return "网络错误（在线识别需联网）";
+            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "网络超时";
+            case SpeechRecognizer.ERROR_NO_MATCH: return "没听清";
+            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "识别服务忙";
+            case SpeechRecognizer.ERROR_SERVER: return "识别服务端错误";
+            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: return "未检测到说话";
+            default: return "未知错误(" + error + ")";
+        }
+    }
+
+    /** 开始任何监听前的统一前置检查：返回 "ok" 或失败原因码。 */
+    private String preflight() {
+        if (!hasMicPermission()) {
+            lastError = "麦克风权限未授予";
+            handler.post(activity::ensureMicPermission);
+            return "noperm";
+        }
+        if (!ensureRecognizer()) {
+            return "norecog";
+        }
+        return "ok";
     }
 
     // ---------- 手动模式 ----------
 
     @JavascriptInterface
-    public void startRecognition() {
-        if (recognizer == null || listening || wakeActive) return;
+    public String startRecognition() {
+        String pre = preflight();
+        if (!"ok".equals(pre)) return pre;
+        if (listening || wakeActive || callActive) return "busy";
         listening = true;
         enableScoIfBt();
         Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN");
         intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-        handler.post(() -> recognizer.startListening(intent));
+        handler.post(() -> {
+            try {
+                recognizer.startListening(intent);
+            } catch (Exception e) {
+                listening = false;
+                lastError = "启动识别失败：" + e.getClass().getSimpleName();
+                emit("error", lastError);
+            }
+        });
+        return "ok";
     }
 
     @JavascriptInterface
@@ -189,12 +384,15 @@ public class VoiceBridge {
 
     /** 开启关键字唤醒监听；keyword 为空时沿用上次。 */
     @JavascriptInterface
-    public void startWake(String keyword) {
+    public String startWake(String keyword) {
         if (keyword != null && !keyword.trim().isEmpty()) {
             wakeKeyword = keyword.trim();
         }
+        String pre = preflight();
+        if (!"ok".equals(pre)) return pre;
         wakeActive = true;
         handler.post(this::wakeListenOnce);
+        return "ok";
     }
 
     @JavascriptInterface
@@ -222,13 +420,31 @@ public class VoiceBridge {
 
     // ---------- 电话模式（免唤醒直通：像打电话一样） ----------
 
-    /** 接通电话模式：无需唤醒词，说话即转文字输入；说完自动发送，回复播报后继续听。 */
+    /**
+     * 接通电话模式：无需唤醒词，说话即转文字输入；说完自动发送，回复播报后继续听。
+     * 返回状态码供网页判断"是不是真的接通了"：
+     *   ok      = 已开始监听
+     *   noperm  = 缺麦克风权限（已弹窗申请，授权后网页会收到 perm 事件自动重连）
+     *   norecog = 本机没有可用语音识别服务
+     */
     @JavascriptInterface
-    public void startCall() {
-        if (recognizer == null || callActive) return;
+    public String startCall() {
+        if (callActive) return "ok";
+        String pre = preflight();
+        if (!"ok".equals(pre)) return pre;
+        // 清理残留状态：手动/免手模式若卡在 listening=true，会导致电话模式永远起不来
+        wakeActive = false;
+        wakePaused = false;
+        callErrStreak = 0;
+        try {
+            if (recognizer != null) recognizer.cancel();
+        } catch (Exception ignored) {
+        }
+        listening = false;
         callActive = true;
         callPaused = false;
         handler.post(this::callListenOnce);
+        return "ok";
     }
 
     /** 挂断电话模式：停止监听。 */
@@ -257,7 +473,12 @@ public class VoiceBridge {
 
     /** 电话模式监听一轮（识别完成后按节流策略续接下一轮）。 */
     private void callListenOnce() {
-        if (!callActive || recognizer == null || listening || callPaused) return;
+        if (!callActive || listening || callPaused) return;
+        if (!ensureRecognizer()) {
+            callActive = false;
+            emit("callerr", "语音识别服务不可用：" + lastError);
+            return;
+        }
         listening = true;
         enableScoIfBt();
         try {
@@ -290,7 +511,12 @@ public class VoiceBridge {
 
     /** 免手模式待命监听一轮（识别完成后按节流策略续接下一轮）。 */
     private void wakeListenOnce() {
-        if (!wakeActive || recognizer == null || listening || wakePaused) return;
+        if (!wakeActive || listening || wakePaused) return;
+        if (!ensureRecognizer()) {
+            wakeActive = false;
+            emit("error", "语音识别服务不可用：" + lastError);
+            return;
+        }
         listening = true;
         enableScoIfBt();
         try {
