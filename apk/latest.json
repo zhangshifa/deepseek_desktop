@@ -1,8 +1,8 @@
 {
   "version_code": 27,
   "version_name": "1.1.14",
-  "notes": "DeepSeekVoice v1.1.14：彻底修复“提示已接通但麦克风不工作”。① 补 Android 11+ <queries> 声明（缺它导致系统语音识别服务不可见、识别器创建失败）；② 识别器改懒创建，可显式绑定 ROM 自带识别服务并支持 Android 13+ 离线识别；③ 接通前强制麦克风权限校验，授权后自动接通；④ 电话模式失败/异常真实上报，不再假装“已接通”；⑤ 新增“语音诊断”面板；⑥ 输入框定位与自动发送加固（优先 DeepSeek 输入框，Enter+发送按钮双兜底）。",
-  "download_url": "https://raw.githubusercontent.com/zhangshifa/deepseek_desktop/main/apk/DSV-1.1.14-release.apk",
-  "apk": "apk/DSV-1.1.14-release.apk",
-  "updated_at": "2026-08-30T02:50:00Z"
+  "notes": "DeepSeekVoice 在线更新包 v1.1.14（GitHub Actions 自动发布）",
+  "download_url": "https://api.github.com/repos/zhangshifa/deepseek_desktop/contents/apk/app-debug.apk?ref=main",
+  "apk": "apk/app-debug.apk",
+  "updated_at": "2026-09-05T11:39:24Z"
 }
